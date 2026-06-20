@@ -1,0 +1,280 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #1a1410;
+  overflow: hidden;
+  font-family: system-ui, sans-serif;
+}
+
+#game-wrap {
+  position: fixed;
+  inset: 0;
+}
+
+#game {
+  /* Canvas fills the window; the camera handles world->viewport mapping. */
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: #2b1f17;
+}
+
+#zoom-controls {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#zoom-controls button {
+  width: 44px;
+  height: 44px;
+  font-size: 24px;
+  line-height: 1;
+  color: #f0e6d2;
+  background: rgba(40, 28, 18, 0.85);
+  border: 1px solid #6b4a30;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+#zoom-controls button:hover {
+  background: rgba(70, 48, 30, 0.95);
+}
+
+#zoom-controls button:active {
+  transform: translateY(1px);
+}
+
+/* In-game HUD is hidden until a level is actually being played. */
+#foodbar,
+#zoom-controls,
+#pan-controls,
+#help,
+#level-label,
+#view-btn,
+#patrol-btn {
+  display: none;
+}
+
+body.playing #foodbar { display: flex; }
+body.playing #zoom-controls { display: flex; }
+body.playing #pan-controls { display: flex; }
+body.playing #help { display: block; }
+body.playing #level-label { display: block; }
+body.playing #view-btn { display: block; }
+body.playing #patrol-btn { display: block; }
+
+#view-btn,
+#patrol-btn {
+  position: absolute;
+  right: 16px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: bold;
+  color: #f0e6d2;
+  background: rgba(40, 28, 18, 0.85);
+  border: 1px solid #6b4a30;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+#view-btn { bottom: 120px; }
+#patrol-btn { bottom: 168px; }
+
+#view-btn:hover,
+#patrol-btn:hover { background: rgba(70, 48, 30, 0.95); }
+#view-btn:active,
+#patrol-btn:active { transform: translateY(1px); }
+
+#patrol-btn.on {
+  color: #2b1c12;
+  background: linear-gradient(#ffd66b, #f0a91e);
+  border-color: #a86f10;
+}
+
+#level-label {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  padding: 6px 12px;
+  background: rgba(40, 28, 18, 0.85);
+  border: 1px solid #6b4a30;
+  border-radius: 8px;
+  color: #f5be4b;
+  font-size: 14px;
+  font-weight: bold;
+  user-select: none;
+}
+
+/* Full-screen overlays for title / messages. */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  text-align: center;
+  color: #f0e6d2;
+  background: radial-gradient(circle at 50% 40%, rgba(60, 42, 26, 0.92), rgba(20, 14, 9, 0.97));
+}
+
+.overlay h1 {
+  margin: 0;
+  font-size: 64px;
+  letter-spacing: 6px;
+  color: #f5be4b;
+  text-shadow: 0 4px 0 #6b3f12, 0 6px 18px rgba(0, 0, 0, 0.6);
+}
+
+.overlay .tagline {
+  margin: 0;
+  font-size: 20px;
+  color: #d8c7a8;
+}
+
+.overlay .hint {
+  margin: 0;
+  font-size: 13px;
+  color: #b39b78;
+  max-width: 420px;
+}
+
+.overlay p {
+  margin: 0;
+  font-size: 18px;
+  color: #e0d2b6;
+}
+
+.overlay button {
+  margin-top: 8px;
+  padding: 12px 34px;
+  font-size: 20px;
+  font-weight: bold;
+  color: #2b1c12;
+  background: linear-gradient(#ffd66b, #f0a91e);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #a86f10;
+}
+
+.overlay button:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 #a86f10;
+}
+
+#foodbar {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: rgba(40, 28, 18, 0.85);
+  border: 1px solid #6b4a30;
+  border-radius: 10px;
+  color: #f0e6d2;
+  font-size: 14px;
+  user-select: none;
+}
+
+#foodbar .food-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #8cc63f;
+  border: 1px solid #5e9220;
+}
+
+#foodbar .food-text {
+  font-weight: bold;
+  letter-spacing: 0.5px;
+}
+
+#food-track {
+  width: 220px;
+  height: 14px;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+#food-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #5e9220, #8cc63f);
+  transition: width 0.15s linear;
+}
+
+#food-count {
+  min-width: 28px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#pan-controls {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.pan-row {
+  display: flex;
+  gap: 6px;
+}
+
+#pan-controls button {
+  width: 40px;
+  height: 40px;
+  font-size: 16px;
+  line-height: 1;
+  color: #f0e6d2;
+  background: rgba(40, 28, 18, 0.85);
+  border: 1px solid #6b4a30;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  touch-action: none;
+}
+
+#pan-controls button:hover {
+  background: rgba(70, 48, 30, 0.95);
+}
+
+#pan-controls button:active {
+  background: rgba(90, 62, 38, 1);
+}
+
+#help {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #e8dcc6;
+  background: rgba(40, 28, 18, 0.8);
+  border: 1px solid #6b4a30;
+  border-radius: 8px;
+  pointer-events: none;
+  user-select: none;
+}
+
+#help b {
+  color: #f5be4b;
+}

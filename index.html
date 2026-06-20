@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ant Farm</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="game-wrap">
+    <canvas id="game"></canvas>
+    <div id="foodbar">
+      <span class="food-icon"></span>
+      <span class="food-text">Food</span>
+      <div id="food-track"><div id="food-fill"></div></div>
+      <span id="food-count">0</span>
+    </div>
+    <div id="zoom-controls">
+      <button id="zoom-in" type="button" title="Zoom in">+</button>
+      <button id="zoom-out" type="button" title="Zoom out">&minus;</button>
+    </div>
+    <button id="view-btn" type="button" title="Toggle surface / underground (V)">View: Underground</button>
+    <button id="patrol-btn" type="button" title="Toggle warrior surface patrol (P)">Warriors: Defend</button>
+    <div id="pan-controls">
+      <button data-pan="up" type="button" title="Pan up">&#9650;</button>
+      <div class="pan-row">
+        <button data-pan="left" type="button" title="Pan left">&#9664;</button>
+        <button data-pan="down" type="button" title="Pan down">&#9660;</button>
+        <button data-pan="right" type="button" title="Pan right">&#9654;</button>
+      </div>
+    </div>
+    <div id="level-label"></div>
+    <div id="help">
+      <b>Controls</b><br />
+      Left-click / drag: select ant(s)<br />
+      Shift+click: add to selection<br />
+      Right-click: move / attack enemy / loot egg / dig dirt<br />
+      WASD: drive selection<br />
+      Arrow keys / d-pad: pan &nbsp;&middot;&nbsp; Wheel: zoom<br />
+      V: surface &harr; underground &nbsp;&middot;&nbsp; P: warrior patrol
+    </div>
+
+    <!-- Title screen -->
+    <div id="title-screen" class="overlay">
+      <h1>ANT&nbsp;FARM</h1>
+      <p class="tagline">Grow your colony. Crush the rivals.</p>
+      <button id="play-btn" type="button">Play</button>
+      <p class="hint">Destroy every enemy queen to win each level. Protect your own.</p>
+    </div>
+
+    <!-- Level complete / game over / victory -->
+    <div id="message-screen" class="overlay" style="display:none">
+      <h1 id="message-title">Level Complete</h1>
+      <p id="message-sub"></p>
+      <button id="message-btn" type="button">Next</button>
+    </div>
+  </div>
+
+  <!-- Loose JS, loaded in dependency order. No bundler. -->
+  <script src="js/config.js"></script>
+  <script src="js/levels.js"></script>
+  <script src="js/grid.js"></script>
+  <script src="js/pathfind.js"></script>
+  <script src="js/entities.js"></script>
+  <script src="js/colony.js"></script>
+  <script src="js/camera.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
