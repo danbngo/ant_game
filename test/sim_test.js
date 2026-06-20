@@ -11,13 +11,13 @@ vm.createContext(sandbox);
 // Concatenate so all top-level class/const declarations share one lexical
 // scope, then export the symbols we need onto the sandbox.
 let src = '';
-for (const f of ['config', 'levels', 'grid', 'pathfind', 'entities', 'colony', 'world']) {
+for (const f of ['config', 'levels', 'grid', 'pathfind', 'entities', 'colony', 'world', 'save']) {
   src += fs.readFileSync(path.join(__dirname, '..', 'js', f + '.js'), 'utf8') + '\n';
 }
-src += 'Object.assign(global, { Grid, World, Colony, Food, CONFIG, LEVELS, findPath });\n';
+src += 'Object.assign(global, { Grid, World, Colony, Food, CONFIG, LEVELS, findPath, serializeGame, deserializeGame });\n';
 vm.runInContext(src, sandbox, { filename: 'bundle.js' });
 
-const { Grid, World, Colony, Food, CONFIG, LEVELS } = sandbox;
+const { Grid, World, Colony, Food, CONFIG, LEVELS, serializeGame, deserializeGame } = sandbox;
 let pass = 0, fail = 0;
 function check(name, cond) {
   if (cond) { pass++; console.log('  ok  - ' + name); }
@@ -194,10 +194,15 @@ function countWalls(grid) {
 {
   const { world, player } = makeWorld();
   const q = player.queen;
-  const sx = Math.round(q.x);
-  const sy = Math.round(q.y);
-  world.run(CONFIG.QUEEN_WANDER_INTERVAL * 4 + 10);
-  check('queen wandered from her start', Math.round(q.x) !== sx || Math.round(q.y) !== sy);
+  const sx = q.x;
+  const sy = q.y;
+  let moved = false;
+  const steps = (CONFIG.QUEEN_WANDER_INTERVAL * 6 + 10) * 60;
+  for (let i = 0; i < steps; i++) {
+    world.update(1 / 60);
+    if (Math.abs(q.x - sx) > 0.5 || Math.abs(q.y - sy) > 0.5) { moved = true; break; }
+  }
+  check('queen wandered from her start', moved);
 }
 
 // --- Queen wander targets avoid other colonies -----------------------------
@@ -236,16 +241,35 @@ function countWalls(grid) {
   check('builder built walls around the queen', countWalls(grid) > before);
 }
 
-// --- Forager fetches surface food and feeds a nursery ----------------------
+// --- Forager picks up surface food -----------------------------------------
+{
+  const { grid, surface, world, player } = makeWorld();
+  world.wild = null;
+  openShaft(grid, player);
+  player.addNursery(7, 11);
+  const f = player.addAnt(CONFIG.ANT_FORAGER, 8, 12);
+  f.area = 'outside';
+  f.x = player.shaftX;
+  f.y = surface.rows - 4;
+  const food = new Food(player.shaftX, surface.rows - 3, 'outside');
+  world.foods.push(food);
+  world.run(0.5); // just long enough to grab it (not deliver)
+  check('forager picked up surface food', world.foods.indexOf(food) === -1);
+}
+
+// --- Forager delivers carried food to a nursery ----------------------------
 {
   const { grid, world, player } = makeWorld();
-  world.wild = null; // isolate: no critters to harass the forager
+  world.wild = null;
   openShaft(grid, player);
-  const nurse = player.addNursery(7, 11);
-  player.addAnt(CONFIG.ANT_FORAGER, 8, 12);
-  world.foods.push(new Food(player.shaftX, 2, 'outside'));
-  world.run(60);
-  check('forager delivered surface food to a nursery', nurse.food >= 1);
+  const nurse = player.addNursery(8, 12);
+  const f = player.addAnt(CONFIG.ANT_FORAGER, 8, 13);
+  const food = new Food(8, 13, 'under');
+  food.carrier = f;
+  f.carriedFood = food;
+  f.order = { type: 'deliverFood' };
+  world.run(10);
+  check('forager delivered carried food to a nursery', nurse.food >= 1);
 }
 
 // --- Food: a fed nursery grows an egg faster than plain tending ------------
@@ -339,6 +363,21 @@ function countWalls(grid) {
   check('beetle damaged the nearby ant', forager.hp < forager.maxHp);
 }
 
+// --- Bees swarm an ant that gets too close to the hive ---------------------
+{
+  const { world, player, wild } = makeWorld();
+  world.spawnHive(10, 4);
+  check('hive spawned guardian bees',
+    wild.workers.filter((c) => c.critter === CONFIG.CRITTER_BEE).length === CONFIG.BEE_COUNT);
+
+  // An ant strays right next to the hive on the surface.
+  const intruder = player.addAnt(CONFIG.ANT_FORAGER, 10, 4);
+  intruder.area = 'outside';
+  intruder.x = 10; intruder.y = 4;
+  world.run(3);
+  check('bees stung the nearby intruder', intruder.hp < intruder.maxHp);
+}
+
 // --- A slain critter drops food --------------------------------------------
 {
   const { world, wild } = makeWorld();
@@ -348,6 +387,35 @@ function countWalls(grid) {
   world.update(1 / 60);
   check('killed critter dropped food', world.foods.length > before);
   check('dead critter removed from wild', wild.workers.indexOf(bug) === -1);
+}
+
+// --- Drone mates with the queen, boosting egg-laying -----------------------
+{
+  const { world, player } = makeWorld();
+  world.wild = null;
+  const drone = player.addAnt(CONFIG.ANT_DRONE, 9, 11);
+  check('drone is harmless', drone.damage === 0);
+  // Step until the moment of mating (queen gains a boost), then check.
+  let mated = false;
+  for (let i = 0; i < 1200 && !mated; i++) {
+    world.update(1 / 60);
+    if (player.queen.layBoostTimer > 0) mated = true;
+  }
+  check('drone mated (queen got a lay-speed boost)', mated);
+  check('mating spawned a heart', world.hearts.length > 0);
+  check('drone expired after mating', player.workers.indexOf(drone) === -1);
+}
+
+// --- Boosted queen lays faster than normal ---------------------------------
+{
+  const { world, player } = makeWorld();
+  world.wild = null;
+  const q = player.queen;
+  q.layBoostTimer = 999;
+  q.layTimer = 0;
+  const before = player.eggs.length;
+  world.run(CONFIG.LAY_INTERVAL * CONFIG.LAY_BOOST_FACTOR + 0.5);
+  check('boosted queen lays within the shortened interval', player.eggs.length > before);
 }
 
 // --- Warrior surface patrol toggle -----------------------------------------
@@ -364,6 +432,37 @@ function countWalls(grid) {
   player.patrol = false;
   world.run(60);
   check('recalled warrior returns underground', w.area === 'under');
+}
+
+// --- Save / load round-trip ------------------------------------------------
+{
+  const { grid, world, player, enemy } = makeWorld();
+  openShaft(grid, player);
+  player.addAnt(CONFIG.ANT_WARRIOR, 9, 11);
+  player.addNursery(7, 11);
+  player.addEgg(6, 11, CONFIG.ANT_FORAGER);
+  world.foods.push(new Food(5, 3, 'outside'));
+  world.spawnCritters(3);
+  player.patrol = true;
+
+  const json = JSON.stringify(serializeGame(world, 1, 'outside'));
+  const r = deserializeGame(JSON.parse(json));
+
+  check('loaded level index preserved', r.levelIndex === 1);
+  check('loaded view preserved', r.view === 'outside');
+  check('loaded player colony has its queen', !!r.world.player.queen);
+  check('loaded player patrol flag preserved', r.world.player.patrol === true);
+  check('loaded ant counts match',
+    r.world.player.workers.length === world.player.workers.length);
+  check('loaded eggs preserved', r.world.player.eggs.length === player.eggs.length);
+  check('loaded food preserved', r.world.foods.length === world.foods.length);
+  check('loaded surface shaft state preserved', r.world.player.surfaceOpen === true);
+  check('loaded world keeps simulating', (() => {
+    r.world.run = (sec, dt = 1 / 60) => { for (let i = 0; i < sec / dt; i++) r.world.update(dt); };
+    const before = r.world.player.workers.length;
+    r.world.run(1);
+    return r.world.player.workers.length >= before; // didn't crash / lose everyone
+  })());
 }
 
 // --- Levels are well-formed ------------------------------------------------

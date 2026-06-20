@@ -70,13 +70,15 @@ const CONFIG = {
   HEART_DURATION: 1.6,      // seconds a mating heart floats before fading
 
   // Surface (outside) world.
-  SURFACE_ROWS: 16,         // height of the open-air surface grid
+  SURFACE_ROWS: 42,         // total height of the surface (tall sky above)
+  SURFACE_GROUND_BAND: 13,  // bottom rows that are walkable "ground" (food/critters)
 
   // Critters: neutral wildlife that roam the surface.
   CRITTER_GRASSHOPPER: 'grasshopper',
   CRITTER_BEETLE: 'beetle',
   CRITTER_LADYBUG: 'ladybug',
-  CRITTER_COUNT: 9,         // surface critters maintained at once
+  CRITTER_BEE: 'bee',
+  CRITTER_COUNT: 9,         // wandering surface critters maintained at once
   CRITTER_SPAWN_INTERVAL: 6,
   CRITTER_FLEE_RANGE: 4,    // grasshopper flees ants within this
   BEETLE_AGGRO: 5,          // beetle attacks ants within this
@@ -85,7 +87,12 @@ const CONFIG = {
     grasshopper: { hp: 12, dmg: 0, def: 0,    speed: 6.5, food: 1 },
     beetle:      { hp: 45, dmg: 6, def: 0.3,  speed: 2.4, food: 3 },
     ladybug:     { hp: 10, dmg: 0, def: 0,    speed: 3.2, food: 1 },
+    bee:         { hp: 8,  dmg: 3, def: 0,    speed: 6.2, food: 1 },
   },
+
+  // Beehive in the tree: bees swarm anyone who gets too close.
+  HIVE_GUARD_RANGE: 6,      // bees attack ants within this of the hive
+  BEE_COUNT: 5,             // bees kept around the hive
 
   // Builders: mining dirt, digging the surface shaft, and walling the queen.
   DIG_TIME_BUILD: 1.0,      // seconds to place one wall
@@ -142,11 +149,24 @@ const COLORS = {
   wallShade: '#48301d',
 
   // Surface (outside).
+  sky: '#8fc7e8',
+  skyLight: '#a6d6f0',
+  skyDark: '#7bb8de',
   grassBase: '#4f7a32',
   grassDark: '#436a2a',
   grassLight: '#5f9040',
   grassBlade: '#3a5c24',
   rock: '#7a7468',
+
+  // Tree + beehive.
+  treeTrunk: '#6b4a2a',
+  treeTrunkDark: '#523619',
+  treeLeaf: '#3f7a34',
+  treeLeafDark: '#2f5e26',
+  hiveBase: '#d9a441',
+  hiveStripe: '#a9742a',
+  bee: '#f2c12e',
+  beeStripe: '#1a1410',
 };
 
 // Ant color tints. Each tint defines the body fill, a lighter highlight, and a

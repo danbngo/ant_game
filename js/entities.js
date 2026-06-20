@@ -91,8 +91,9 @@ class Ant {
     this.area = 'under';     // 'under' (nest) or 'outside' (surface)
     this.digTimer = 0;     // progress digging the current tile
     this.repathTimer = 0;  // throttles chase re-pathing
-    this.layTimer = 0;     // queens only: time accumulated toward laying an egg
-    this.wanderTimer = 0;  // queens only: time accumulated toward wandering
+    this.layTimer = 0;       // queens only: time accumulated toward laying an egg
+    this.wanderTimer = 0;    // queens only: time accumulated toward wandering
+    this.layBoostTimer = 0;  // queens only: time left of post-mating lay speedup
   }
 
   // World-pixel center of the footprint, in TILE units.

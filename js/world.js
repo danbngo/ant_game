@@ -9,6 +9,8 @@ class World {
     this.player = null;
     this.foods = [];        // food morsels, all on the surface
     this.foodTimer = 0;     // accumulates toward the next food spawn
+    this.hearts = [];        // floating mating hearts {x, y, age}
+    this.hive = null;        // beehive location on the surface {x, y}
   }
 
   // Wire up the outside surface and each colony's entrance state.
@@ -170,13 +172,15 @@ class World {
     ant.carriedFood = null;
   }
 
-  // A random open surface tile with no food on it (food grows outside).
+  // A random open tile in the surface "ground band" near the bottom (the upper
+  // rows are open sky/tree). Food, critters, and bees stay down here.
   _randomSurface() {
     const s = this.surface;
     if (!s) return null;
+    const top = Math.max(0, s.rows - CONFIG.SURFACE_GROUND_BAND);
     for (let i = 0; i < 40; i++) {
       const x = Math.floor(Math.random() * s.cols);
-      const y = Math.floor(Math.random() * (s.rows - 1)); // not the bottom hole row
+      const y = top + Math.floor(Math.random() * (s.rows - 1 - top)); // not the bottom hole row
       if (s.isTunnel(x, y) && !this.foods.some((f) => f.x === x && f.y === y)) {
         return { x, y };
       }
@@ -205,13 +209,51 @@ class World {
     }
   }
 
+  // Place the beehive on the surface and spawn its guardian bees.
+  spawnHive(x, y) {
+    this.hive = { x, y };
+    for (let i = 0; i < CONFIG.BEE_COUNT; i++) this._spawnBee();
+  }
+
+  _spawnBee() {
+    if (!this.wild || !this.hive) return;
+    const ang = Math.random() * Math.PI * 2;
+    const r = 1 + Math.random() * 2;
+    const x = Math.round(this.hive.x + Math.cos(ang) * r);
+    const y = Math.round(this.hive.y + Math.sin(ang) * r);
+    const tx = this.surface.inBounds(x, y) && this.surface.isTunnel(x, y) ? x : Math.round(this.hive.x);
+    const ty = this.surface.inBounds(x, y) && this.surface.isTunnel(x, y) ? y : Math.round(this.hive.y);
+    this.wild.addCritter(CONFIG.CRITTER_BEE, tx, ty);
+  }
+
+  // Nearest non-wild ant on the surface within HIVE_GUARD_RANGE of the hive.
+  _nearestIntruderNearHive() {
+    if (!this.hive) return null;
+    let best = null;
+    let bestD = Infinity;
+    for (const c of this.colonies) {
+      if (c.isWild) continue;
+      for (const a of c.allAnts()) {
+        if (a.area !== 'outside') continue;
+        const dh = Math.hypot(a.cx - this.hive.x, a.cy - this.hive.y);
+        if (dh <= CONFIG.HIVE_GUARD_RANGE && dh < bestD) { bestD = dh; best = a; }
+      }
+    }
+    return best;
+  }
+
   _spawnCritters(dt) {
     if (!this.wild) return;
     this.critterTimer = (this.critterTimer || 0) + dt;
     if (this.critterTimer < CONFIG.CRITTER_SPAWN_INTERVAL) return;
     this.critterTimer -= CONFIG.CRITTER_SPAWN_INTERVAL;
-    const alive = this.wild.workers.filter((c) => c.hp > 0).length;
-    if (alive < CONFIG.CRITTER_COUNT) this.spawnCritters(1);
+    const wanderers = this.wild.workers.filter((c) => c.hp > 0 && c.critter !== CONFIG.CRITTER_BEE).length;
+    if (wanderers < CONFIG.CRITTER_COUNT) this.spawnCritters(1);
+    // Keep the hive defended.
+    if (this.hive) {
+      const bees = this.wild.workers.filter((c) => c.hp > 0 && c.critter === CONFIG.CRITTER_BEE).length;
+      if (bees < CONFIG.BEE_COUNT) this._spawnBee();
+    }
   }
 
   // Critter behavior: beetles attack ants, grasshoppers flee, all wander.
@@ -220,6 +262,33 @@ class World {
     if (!wild) return;
     for (const cr of wild.workers) {
       if (cr.hp <= 0) continue;
+
+      // Bees swarm intruders near the hive, then return to circle it.
+      if (cr.critter === CONFIG.CRITTER_BEE) {
+        const hive = this.hive;
+        if (cr.order && cr.order.type === 'attack') {
+          const t = cr.order.target;
+          const farFromHive = !t || t.hp <= 0 || !hive ||
+            Math.hypot(t.cx - hive.x, t.cy - hive.y) > CONFIG.HIVE_GUARD_RANGE + 2;
+          if (farFromHive) cr.order = null;
+          else continue; // keep stinging
+        }
+        const foe = this._nearestIntruderNearHive();
+        if (foe) { cr.order = { type: 'attack', target: foe }; continue; }
+        // Orbit the hive.
+        if (hive && !cr.isMoving()) {
+          const ang = Math.random() * Math.PI * 2;
+          const rad = 1 + Math.random() * 2.5;
+          const tx = Math.round(hive.x + Math.cos(ang) * rad);
+          const ty = Math.round(hive.y + Math.sin(ang) * rad);
+          if (isPassable(this.surface, tx, ty, 1)) {
+            const p = findPath(this.surface, Math.round(cr.x), Math.round(cr.y), tx, ty, 1);
+            if (p) { cr.setPath(p); cr.order = { type: 'move' }; }
+          }
+        }
+        continue;
+      }
+
       if (this._hasLiveAttack(cr)) continue; // beetle already on a live target
 
       if (cr.critter === CONFIG.CRITTER_BEETLE) {
@@ -324,7 +393,7 @@ class World {
       if (a.attackTimer > 0) a.attackTimer -= dt;
       // Health regen: heal slowly once out of combat for HEAL_DELAY seconds.
       if (a.regenCooldown > 0) a.regenCooldown -= dt;
-      else if (a.hp < a.maxHp) a.hp = Math.min(a.maxHp, a.hp + CONFIG.HEAL_RATE * dt);
+      else if (!a.dead && a.hp < a.maxHp) a.hp = Math.min(a.maxHp, a.hp + CONFIG.HEAL_RATE * dt);
       a.update(dt);
       // Carried things ride along with the ant.
       if (a.carrying) { a.carrying.x = a.x; a.carrying.y = a.y; }
@@ -333,7 +402,13 @@ class World {
 
     this._updateEggs(dt);
     this._updateLaying(dt);
+    this._updateHearts(dt);
     this._cleanupDead();
+  }
+
+  _updateHearts(dt) {
+    for (const h of this.hearts) h.age += dt;
+    this.hearts = this.hearts.filter((h) => h.age < CONFIG.HEART_DURATION);
   }
 
   // Idle, non-combat ants pick up jobs:
@@ -347,6 +422,11 @@ class World {
       const hasNursery = ants.some((a) => a.isNursery);
       for (const a of ants) {
         if (a.order || a.isCritter || a.isQueen || a.isWorker) continue;
+
+        if (a.isDrone) {
+          if (c.queen && c.queen.hp > 0) a.order = { type: 'mate' };
+          continue;
+        }
 
         if (a.isWarrior) {
           // Patrol the surface when the colony's patrol order is set.
@@ -510,14 +590,18 @@ class World {
     }
   }
 
-  // Queens lay a new egg every LAY_INTERVAL seconds.
+  // Queens lay eggs; faster while boosted by a recent mating.
   _updateLaying(dt) {
     for (const c of this.colonies) {
       const q = c.queen;
       if (!q || q.hp <= 0) continue;
+      if (q.layBoostTimer > 0) q.layBoostTimer -= dt;
+      const interval = q.layBoostTimer > 0
+        ? CONFIG.LAY_INTERVAL * CONFIG.LAY_BOOST_FACTOR
+        : CONFIG.LAY_INTERVAL;
       q.layTimer += dt;
-      if (q.layTimer >= CONFIG.LAY_INTERVAL) {
-        q.layTimer -= CONFIG.LAY_INTERVAL;
+      if (q.layTimer >= interval) {
+        q.layTimer -= interval;
         const spot = this.freeTileNear(Math.round(q.x), Math.round(q.y), 1);
         c.addEgg(spot.x, spot.y);
       }
@@ -532,7 +616,7 @@ class World {
     for (const c of this.colonies) {
       if (c.isPlayer || c.isWild) continue; // wildlife has its own behavior
       for (const a of c.allAnts()) {
-        if (a.isNursery) continue; // nurses never fight
+        if (a.isNursery || a.isDrone) continue; // nurses & drones never fight
         if (this._hasLiveAttack(a)) continue;
         const range = a.isQueen ? CONFIG.ATTACK_RANGE + 0.5 : CONFIG.AGGRO_RANGE;
         const near = this.nearestPlayerAnt(a);
@@ -546,10 +630,10 @@ class World {
     //    an enemy is right in melee; workers within AUTO_ENGAGE_RANGE.
     const BUSY = {
       loot: 1, dig: 1, returnHome: 1, forage: 1, deliverFood: 1, tend: 1,
-      goOutside: 1, forageOutside: 1, comeInside: 1, mine: 1, buildWall: 1,
+      goOutside: 1, forageOutside: 1, comeInside: 1, mine: 1, buildWall: 1, mate: 1,
     };
     for (const a of this.allAnts()) {
-      if (a.isNursery || a.isCritter) continue; // nurses & wildlife handled elsewhere
+      if (a.isNursery || a.isCritter || a.isDrone) continue; // these never fight
       if (this._hasLiveAttack(a)) continue;
       const o = a.order;
       if (o && BUSY[o.type]) continue; // don't interrupt a deliberate job
@@ -726,6 +810,25 @@ class World {
         break;
       }
 
+      case 'mate': {
+        const q = ant.colony.queen;
+        if (!q || q.hp <= 0) { ant.order = null; break; }
+        const d = Math.hypot(q.cx - ant.cx, q.cy - ant.cy);
+        if (d <= CONFIG.MATE_RANGE) {
+          // Mate: pop a heart, boost the queen's laying, and the drone expires.
+          this.hearts.push({ x: q.cx, y: q.cy - 0.5, age: 0 });
+          q.layBoostTimer = CONFIG.LAY_BOOST_DURATION;
+          ant.hp = 0;
+          ant.dead = true; // drones die after mating (don't let regen revive them)
+        } else if (!ant.isMoving()) {
+          const p = findPath(grid, ix, iy, Math.round(q.x), Math.round(q.y), ant.size) ||
+            findPathAdjacent(grid, ix, iy, Math.round(q.x), Math.round(q.y), ant.size);
+          if (p) ant.setPath(p);
+          else ant.order = null;
+        }
+        break;
+      }
+
       // --- Forager travel between areas -----------------------------------
 
       case 'goOutside': {
@@ -842,7 +945,7 @@ class World {
   _cleanupDead() {
     for (const c of this.colonies) {
       for (const w of c.workers) {
-        if (w.hp > 0) continue;
+        if (w.hp > 0 && !w.dead) continue;
         if (w.carrying) this._dropEgg(w);
         if (w.carriedFood) this._dropFood(w);
         // A slain critter leaves food behind on the surface.
@@ -852,7 +955,7 @@ class World {
           }
         }
       }
-      c.workers = c.workers.filter((w) => w.hp > 0);
+      c.workers = c.workers.filter((w) => w.hp > 0 && !w.dead);
       if (c.queen && c.queen.hp <= 0) {
         if (c.queen.carrying) this._dropEgg(c.queen);
         c.queen = null;

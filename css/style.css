@@ -57,7 +57,8 @@ html, body {
 #help,
 #level-label,
 #view-btn,
-#patrol-btn {
+#patrol-btn,
+#save-btn {
   display: none;
 }
 
@@ -68,9 +69,11 @@ body.playing #help { display: block; }
 body.playing #level-label { display: block; }
 body.playing #view-btn { display: block; }
 body.playing #patrol-btn { display: block; }
+body.playing #save-btn { display: block; }
 
 #view-btn,
-#patrol-btn {
+#patrol-btn,
+#save-btn {
   position: absolute;
   right: 16px;
   padding: 10px 14px;
@@ -86,11 +89,14 @@ body.playing #patrol-btn { display: block; }
 
 #view-btn { bottom: 120px; }
 #patrol-btn { bottom: 168px; }
+#save-btn { bottom: 216px; }
 
 #view-btn:hover,
-#patrol-btn:hover { background: rgba(70, 48, 30, 0.95); }
+#patrol-btn:hover,
+#save-btn:hover { background: rgba(70, 48, 30, 0.95); }
 #view-btn:active,
-#patrol-btn:active { transform: translateY(1px); }
+#patrol-btn:active,
+#save-btn:active { transform: translateY(1px); }
 
 #patrol-btn.on {
   color: #2b1c12;

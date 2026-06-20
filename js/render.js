@@ -21,21 +21,33 @@ class Renderer {
     }
   }
 
-  // The open-air surface: grass on open tiles, rocks where it's solid.
+  // The open-air surface: sky up top, a grassy ground band near the bottom.
   drawSurfaceGrid(grid) {
     const t = this.t;
+    const groundTop = grid.rows - CONFIG.SURFACE_GROUND_BAND;
     for (let y = 0; y < grid.rows; y++) {
       for (let x = 0; x < grid.cols; x++) {
         const px = x * t;
         const py = y * t;
         const r = grid.seed[y][x];
-        if (grid.isTunnel(x, y)) {
+        if (y < groundTop) {
+          // Sky.
+          let sky = COLORS.sky;
+          if (r < 0.3) sky = COLORS.skyDark;
+          else if (r > 0.7) sky = COLORS.skyLight;
+          this.ctx.fillStyle = sky;
+          this.ctx.fillRect(px, py, t, t);
+        } else if (grid.isTunnel(x, y)) {
           let base = COLORS.grassBase;
           if (r < 0.33) base = COLORS.grassDark;
           else if (r > 0.66) base = COLORS.grassLight;
           this.ctx.fillStyle = base;
           this.ctx.fillRect(px, py, t, t);
-          // a few blades
+          // grassy top edge on the first ground row
+          if (y === groundTop) {
+            this.ctx.fillStyle = COLORS.grassLight;
+            this.ctx.fillRect(px, py, t, Math.max(1, t * 0.18));
+          }
           this.ctx.fillStyle = COLORS.grassBlade;
           const s = Math.max(1, Math.floor(t * 0.08));
           this.ctx.fillRect(px + Math.floor(r * (t - s)), py + Math.floor(((r * 5.1) % 1) * (t - s)), s, s * 2);
@@ -254,6 +266,7 @@ class Renderer {
       : ant.isWarrior ? 1.45
       : ant.isForager ? 1.2
       : ant.isBuilder ? 1.05
+      : ant.isDrone ? 0.85
       : 0.9;
     const tint = TINTS[ant.tint] || TINTS[DEFAULT_TINT];
     const body = tint.body;
@@ -293,6 +306,20 @@ class Renderer {
     this.ctx.lineTo(unit * 2.8, unit * 0.6);
     this.ctx.stroke();
 
+    // Drones have translucent wings flaring back from the thorax.
+    if (ant.isDrone) {
+      this.ctx.fillStyle = 'rgba(220, 232, 255, 0.55)';
+      this.ctx.strokeStyle = 'rgba(150, 170, 200, 0.7)';
+      this.ctx.lineWidth = Math.max(1, unit * 0.12);
+      for (const sgn of [-1, 1]) {
+        this.ctx.beginPath();
+        this.ctx.ellipse(-unit * 0.8, sgn * unit * 1.1, unit * 1.3, unit * 0.5,
+          sgn * 0.5, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+      }
+    }
+
     // Three body segments: abdomen (back), thorax (mid), head (front).
     this._segment(-unit * 1.4, 0, unit * 1.15, body, bodyLight); // abdomen
     this._segment(0, 0, unit * 0.85, body, bodyLight);           // thorax
@@ -313,7 +340,28 @@ class Renderer {
     else if (ant.isNursery) this._drawNurseHat(hx, hy, gear);
     else if (ant.isForager) this._drawForagerHat(hx, hy, gear);
     else if (ant.isBuilder) this._drawHardHat(hx, hy, gear, '#e07b1e'); // orange
+    else if (ant.isDrone) { /* drones are bare-headed (winged) */ }
     else this._drawHardHat(hx, hy, gear); // worker: yellow hard hat
+  }
+
+  // A floating mating heart that rises and fades.
+  drawHeart(h) {
+    const t = this.t;
+    const a = Math.max(0, 1 - h.age / CONFIG.HEART_DURATION);
+    const cx = h.x * t;
+    const cy = h.y * t - h.age * 22;
+    const s = t * 0.55;
+    const c = this.ctx;
+    c.save();
+    c.globalAlpha = a;
+    c.translate(cx, cy);
+    c.fillStyle = '#ff4d6d';
+    c.beginPath();
+    c.moveTo(0, s * 0.32);
+    c.bezierCurveTo(s * 0.55, -s * 0.05, s * 0.32, -s * 0.5, 0, -s * 0.18);
+    c.bezierCurveTo(-s * 0.32, -s * 0.5, -s * 0.55, -s * 0.05, 0, s * 0.32);
+    c.fill();
+    c.restore();
   }
 
   // Construction hard hat (worker/forager yellow; builder passes orange).
@@ -440,6 +488,7 @@ class Renderer {
     c.rotate(cr.angle);
     if (cr.critter === CONFIG.CRITTER_LADYBUG) this._drawLadybug(t);
     else if (cr.critter === CONFIG.CRITTER_BEETLE) this._drawBeetle(t);
+    else if (cr.critter === CONFIG.CRITTER_BEE) this._drawBee(t);
     else this._drawGrasshopper(t);
     c.restore();
 
@@ -573,6 +622,77 @@ class Renderer {
     // eye
     c.fillStyle = '#1a2a10';
     c.beginPath(); c.arc(rx * 1.05, -ry * 0.4, ry * 0.4, 0, Math.PI * 2); c.fill();
+  }
+
+  _drawBee(t) {
+    const c = this.ctx;
+    const rx = t * 0.26;
+    const ry = t * 0.18;
+    // wings
+    c.fillStyle = 'rgba(230, 240, 255, 0.6)';
+    c.strokeStyle = 'rgba(150, 170, 200, 0.7)';
+    c.lineWidth = Math.max(1, t * 0.03);
+    for (const sgn of [-1, 1]) {
+      c.beginPath();
+      c.ellipse(-rx * 0.2, sgn * ry * 1.1, rx * 0.7, ry * 0.5, sgn * 0.5, 0, Math.PI * 2);
+      c.fill(); c.stroke();
+    }
+    // body
+    c.fillStyle = COLORS.bee;
+    c.beginPath(); c.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); c.fill();
+    // stripes
+    c.fillStyle = COLORS.beeStripe;
+    c.fillRect(-rx * 0.5, -ry, rx * 0.22, ry * 2);
+    c.fillRect(rx * 0.1, -ry, rx * 0.22, ry * 2);
+    // head
+    c.fillStyle = COLORS.beeStripe;
+    c.beginPath(); c.arc(rx * 0.95, 0, ry * 0.7, 0, Math.PI * 2); c.fill();
+    // stinger
+    c.beginPath();
+    c.moveTo(-rx, 0); c.lineTo(-rx * 1.5, -ry * 0.2); c.lineTo(-rx * 1.5, ry * 0.2); c.closePath();
+    c.fill();
+  }
+
+  // A big tree with a beehive hanging in it (surface decoration).
+  drawTreeHive(tileX, tileY) {
+    const t = this.t;
+    const cx = (tileX + 0.5) * t;
+    const cy = (tileY + 0.5) * t;
+    const c = this.ctx;
+    // trunk: from the hive down to the bottom of the surface.
+    const trunkH = (CONFIG.SURFACE_ROWS - tileY) * t;
+    c.fillStyle = COLORS.treeTrunk;
+    c.fillRect(cx - t * 0.4, cy, t * 0.8, trunkH);
+    c.fillStyle = COLORS.treeTrunkDark;
+    c.fillRect(cx + t * 0.12, cy, t * 0.18, trunkH);
+    // a couple of branches
+    c.strokeStyle = COLORS.treeTrunk;
+    c.lineWidth = t * 0.35;
+    c.lineCap = 'round';
+    c.beginPath(); c.moveTo(cx, cy - t * 0.5); c.lineTo(cx - t * 2, cy - t * 2.2); c.stroke();
+    c.beginPath(); c.moveTo(cx, cy - t * 0.5); c.lineTo(cx + t * 2, cy - t * 2.2); c.stroke();
+    // big leafy canopy above the hive.
+    c.fillStyle = COLORS.treeLeafDark;
+    for (const [ox, oy, r] of [[-2.4, -3.2, 2.6], [2.4, -3.2, 2.6], [0, -4.6, 2.9], [0, -2.4, 2.6]]) {
+      c.beginPath(); c.arc(cx + ox * t, cy + oy * t, r * t, 0, Math.PI * 2); c.fill();
+    }
+    c.fillStyle = COLORS.treeLeaf;
+    for (const [ox, oy, r] of [[-1.8, -3.6, 2.0], [1.8, -3.6, 2.0], [0, -5.0, 2.2], [0, -3.0, 2.1], [-2.6, -2.6, 1.6], [2.6, -2.6, 1.6]]) {
+      c.beginPath(); c.arc(cx + ox * t, cy + oy * t, r * t, 0, Math.PI * 2); c.fill();
+    }
+    // hive hanging at (tileX, tileY)
+    c.fillStyle = COLORS.hiveBase;
+    c.beginPath(); c.ellipse(cx, cy, t * 0.85, t * 1.1, 0, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = COLORS.hiveStripe;
+    c.lineWidth = Math.max(1, t * 0.1);
+    for (let i = -1; i <= 2; i++) {
+      c.beginPath();
+      c.ellipse(cx, cy + i * t * 0.42, t * 0.85, t * 0.24, 0, 0, Math.PI);
+      c.stroke();
+    }
+    // entrance hole
+    c.fillStyle = '#3a2616';
+    c.beginPath(); c.arc(cx, cy + t * 0.4, t * 0.2, 0, Math.PI * 2); c.fill();
   }
 
   // A nest entrance hole (shaft top underground, or surface opening).

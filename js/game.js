@@ -89,35 +89,105 @@
     wild.isWild = true;
     w.wild = wild;
     w.spawnCritters(CONFIG.CRITTER_COUNT);
+    // A tree rooted in the ground band, with the hive hanging low where ants roam.
+    w.spawnHive(Math.floor(def.cols * 0.3), CONFIG.SURFACE_ROWS - 9);
 
     w.seedFood(def.food || 25);
     return w;
   }
 
-  function startLevel(idx) {
-    levelIndex = idx;
-    const def = LEVELS[idx];
-    world = buildLevel(def);
-
-    cameraUnder = new Camera(canvas.width, canvas.height, def.cols * T, def.rows * T);
+  // Set up cameras + input for the current `world`, then start playing.
+  function enterWorld(initialView) {
+    const cols = world.grid.cols;
+    const rows = world.grid.rows;
+    const sRows = world.surface ? world.surface.rows : CONFIG.SURFACE_ROWS;
+    cameraUnder = new Camera(canvas.width, canvas.height, cols * T, rows * T);
     cameraUnder.x = world.player.home.x * T;
     cameraUnder.y = world.player.home.y * T;
-    cameraOutside = new Camera(canvas.width, canvas.height, def.cols * T, CONFIG.SURFACE_ROWS * T);
+    cameraOutside = new Camera(canvas.width, canvas.height, cols * T, sRows * T);
     cameraOutside.x = world.player.home.x * T;
-    cameraOutside.y = (CONFIG.SURFACE_ROWS - 2) * T;
+    // Focus on the ground band (where the action is); tall sky sits above.
+    cameraOutside.y = (sRows - CONFIG.SURFACE_GROUND_BAND / 2) * T;
 
-    view = 'under';
-    camera = cameraUnder;
+    view = initialView || 'under';
+    camera = view === 'under' ? cameraUnder : cameraOutside;
     selection.clear();
+    const grid = view === 'under' ? world.grid : world.surface;
     if (!input) input = new InputController(canvas, camera, world, selection);
-    else input.rebind(camera, world, selection);
+    else { input.rebind(camera, world, selection); input.setView(view, camera, grid); }
 
-    setLevelLabel('Level ' + (idx + 1) + ': ' + def.name);
+    setLevelLabel('Level ' + (levelIndex + 1) + ': ' +
+      (LEVELS[levelIndex] ? LEVELS[levelIndex].name : ''));
     updateViewButton();
     updatePatrolButton();
+    updateLoadButton();
     hideOverlays();
     document.body.classList.add('playing');
     state = 'playing';
+    autoSaveTimer = 0;
+    writeSave(); // snapshot the new state immediately
+  }
+
+  function startLevel(idx) {
+    levelIndex = idx;
+    world = buildLevel(LEVELS[idx]);
+    enterWorld('under');
+  }
+
+  // --- Save / load ---------------------------------------------------------
+
+  const SAVE_KEY = 'antfarm_save_v1';
+
+  function hasSave() {
+    try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; }
+  }
+
+  function writeSave() {
+    if (!world) return false;
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(serializeGame(world, levelIndex, view)));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function doSave() {
+    if (state !== 'playing' || !world) return;
+    flashSaveButton(writeSave() ? 'Saved!' : 'Save failed');
+  }
+
+  // Auto-save the game in progress so the last session is always loadable.
+  let autoSaveTimer = 0;
+  function autoSave(dt) {
+    if (state !== 'playing' || !world) return;
+    autoSaveTimer += dt;
+    if (autoSaveTimer >= 10) { autoSaveTimer = 0; writeSave(); }
+  }
+
+  function doLoad() {
+    let raw;
+    try { raw = localStorage.getItem(SAVE_KEY); } catch (e) { raw = null; }
+    if (!raw) return false;
+    const r = deserializeGame(JSON.parse(raw));
+    world = r.world;
+    levelIndex = r.levelIndex;
+    enterWorld(r.view);
+    return true;
+  }
+
+  let saveFlashTimer = null;
+  function flashSaveButton(text) {
+    const btn = document.getElementById('save-btn');
+    if (!btn) return;
+    btn.textContent = text;
+    if (saveFlashTimer) clearTimeout(saveFlashTimer);
+    saveFlashTimer = setTimeout(() => { btn.textContent = 'Save'; }, 1200);
+  }
+
+  function updateLoadButton() {
+    const btn = document.getElementById('continue-btn');
+    if (btn) btn.style.display = hasSave() ? 'inline-block' : 'none';
   }
 
   function toggleView() {
@@ -170,6 +240,7 @@
     document.body.classList.remove('playing');
     msgScreen.style.display = 'none';
     titleScreen.style.display = 'flex';
+    updateLoadButton();
   }
   function showMessage(title, sub, btnLabel, action) {
     state = 'message';
@@ -232,6 +303,7 @@
 
     world.update(dt);
     for (const ant of [...selection]) if (ant.hp <= 0) selection.delete(ant);
+    autoSave(dt);
     checkEnd();
   }
 
@@ -274,6 +346,9 @@
       if (ant.carriedFood) renderer.drawFood(ant.carriedFood);
     }
     for (const ant of world.allAnts()) if (ant.area === 'under') renderer.drawHpBar(ant);
+
+    // Mating hearts float over the queen.
+    for (const h of world.hearts) renderer.drawHeart(h);
   }
 
   function drawSurface() {
@@ -283,6 +358,9 @@
     for (const c of world.colonies) {
       if (c.entranceOut) renderer.drawHole(c.entranceOut.x, c.entranceOut.y);
     }
+
+    // The tree + beehive.
+    if (world.hive) renderer.drawTreeHive(world.hive.x, world.hive.y);
 
     for (const f of world.foods) if (!f.carrier && f.area === 'outside') renderer.drawFood(f);
     for (const ant of selection) if (ant.area === 'outside') renderer.drawSelectionRing(ant);
@@ -362,6 +440,10 @@
   if (viewBtn) viewBtn.addEventListener('click', toggleView);
   const patrolBtn = document.getElementById('patrol-btn');
   if (patrolBtn) patrolBtn.addEventListener('click', togglePatrol);
+  const saveBtn = document.getElementById('save-btn');
+  if (saveBtn) saveBtn.addEventListener('click', doSave);
+  const continueBtn = document.getElementById('continue-btn');
+  if (continueBtn) continueBtn.addEventListener('click', doLoad);
   window.addEventListener('keydown', (e) => {
     const k = e.key.toLowerCase();
     if (k === 'v') toggleView();
@@ -373,6 +455,9 @@
     if (cameraUnder) cameraUnder.resize(canvas.width, canvas.height);
     if (cameraOutside) cameraOutside.resize(canvas.width, canvas.height);
   });
+
+  // Persist the last game when leaving the page.
+  window.addEventListener('beforeunload', () => { if (state === 'playing') writeSave(); });
 
   // Start on the title screen.
   showTitle();
