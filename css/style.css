@@ -12,6 +12,16 @@ html, body {
   inset: 0;
 }
 
+/* Hidden background-music player — present in the DOM but not visible. */
+#yt-music {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  left: -9999px;
+  top: -9999px;
+  pointer-events: none;
+}
+
 #game {
   /* Canvas fills the window; the camera handles world->viewport mapping. */
   position: absolute;
@@ -58,7 +68,12 @@ html, body {
 #level-label,
 #view-btn,
 #patrol-btn,
-#save-btn {
+#save-btn,
+#honey-btn,
+#bully-btn,
+#music-btn,
+#hive-btn,
+#index-btn {
   display: none;
 }
 
@@ -70,10 +85,20 @@ body.playing #level-label { display: block; }
 body.playing #view-btn { display: block; }
 body.playing #patrol-btn { display: block; }
 body.playing #save-btn { display: block; }
+body.playing #honey-btn { display: block; }
+body.playing #bully-btn { display: block; }
+body.playing #music-btn { display: block; }
+body.playing #hive-btn { display: block; }
+body.playing #index-btn { display: block; }
 
 #view-btn,
 #patrol-btn,
-#save-btn {
+#save-btn,
+#honey-btn,
+#bully-btn,
+#music-btn,
+#hive-btn,
+#index-btn {
   position: absolute;
   right: 16px;
   padding: 10px 14px;
@@ -90,19 +115,174 @@ body.playing #save-btn { display: block; }
 #view-btn { bottom: 120px; }
 #patrol-btn { bottom: 168px; }
 #save-btn { bottom: 216px; }
+#honey-btn { bottom: 264px; }
+#bully-btn { bottom: 312px; }
+#hive-btn { bottom: 360px; }
+#index-btn { bottom: 408px; }
+#music-btn { bottom: 456px; }
 
 #view-btn:hover,
 #patrol-btn:hover,
-#save-btn:hover { background: rgba(70, 48, 30, 0.95); }
+#save-btn:hover,
+#honey-btn:hover,
+#bully-btn:hover,
+#music-btn:hover,
+#hive-btn:hover,
+#index-btn:hover { background: rgba(70, 48, 30, 0.95); }
 #view-btn:active,
 #patrol-btn:active,
-#save-btn:active { transform: translateY(1px); }
+#save-btn:active,
+#honey-btn:active,
+#bully-btn:active,
+#music-btn:active,
+#hive-btn:active,
+#index-btn:active { transform: translateY(1px); }
 
-#patrol-btn.on {
+#patrol-btn.on,
+#honey-btn.on,
+#bully-btn.on {
   color: #2b1c12;
   background: linear-gradient(#ffd66b, #f0a91e);
   border-color: #a86f10;
 }
+
+/* A strategy toggle that's cooling down: dimmed and not clickable. */
+#patrol-btn.cooldown,
+#honey-btn.cooldown,
+#bully-btn.cooldown {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(0.4);
+}
+
+/* Team-select screen. */
+#team-buttons {
+  display: flex;
+  gap: 20px;
+  margin-top: 10px;
+}
+.team-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 18px;
+  background: rgba(40, 28, 18, 0.85);
+  border: 2px solid #6b4a30;
+  border-radius: 14px;
+  color: #f0e6d2;
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: transform 0.08s, border-color 0.08s, background 0.08s;
+}
+.team-btn:hover {
+  background: rgba(70, 48, 30, 0.95);
+  border-color: #f0c537;
+  transform: translateY(-3px);
+}
+.team-btn canvas {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 10px;
+}
+
+/* Index / bestiary overlay. */
+#index-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 7, 4, 0.7);
+}
+#index-panel {
+  max-width: 520px;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 18px 26px;
+  background: rgba(40, 28, 18, 0.97);
+  border: 1px solid #6b4a30;
+  border-radius: 12px;
+  color: #e8dcc6;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+}
+#index-panel h2 {
+  margin: 0 0 8px;
+  color: #ffd66b;
+  text-align: center;
+}
+#index-panel h3 {
+  margin: 16px 0 6px;
+  color: #f5be4b;
+  border-bottom: 1px solid #6b4a30;
+  padding-bottom: 4px;
+}
+#index-panel ul {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.6;
+  font-size: 14px;
+}
+#index-panel li { margin-bottom: 3px; }
+#index-panel b { color: #fff1cf; }
+#index-close-btn {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  padding: 10px 18px;
+  font-size: 15px;
+  font-weight: bold;
+  color: #f0e6d2;
+  background: rgba(40, 28, 18, 0.95);
+  border: 1px solid #6b4a30;
+  border-radius: 10px;
+  cursor: pointer;
+}
+#index-close-btn:hover { background: rgba(70, 48, 30, 1); }
+
+/* Inside-the-hive battle scene overlay. */
+#hive-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+#hive-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+#hive-title {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  color: #ffd66b;
+  font-size: 26px;
+  text-shadow: 0 2px 6px #000;
+  user-select: none;
+}
+#hive-leave-btn {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 22px;
+  font-size: 16px;
+  font-weight: bold;
+  color: #f0e6d2;
+  background: rgba(40, 28, 18, 0.9);
+  border: 1px solid #6b4a30;
+  border-radius: 10px;
+  cursor: pointer;
+}
+#hive-leave-btn:hover { background: rgba(70, 48, 30, 0.98); }
 
 #level-label {
   position: absolute;
@@ -139,6 +319,38 @@ body.playing #save-btn { display: block; }
   letter-spacing: 6px;
   color: #f5be4b;
   text-shadow: 0 4px 0 #6b3f12, 0 6px 18px rgba(0, 0, 0, 0.6);
+}
+
+/* A little ant perched on top of the word "ANT". */
+.ant-word { position: relative; }
+.title-ant {
+  position: absolute;
+  left: 50%;
+  top: -0.62em;
+  font-size: 0.5em;
+  letter-spacing: 0;
+  transform: translateX(-50%) rotate(90deg);
+  text-shadow: none;
+  animation: ant-bob 1.1s ease-in-out infinite;
+}
+@keyframes ant-bob {
+  0%, 100% { transform: translateX(-50%) rotate(90deg) translateY(0); }
+  50%      { transform: translateX(-55%) rotate(90deg) translateY(-3px); }
+}
+
+/* A little bee hovering over the word "FARM". */
+.title-bee {
+  position: absolute;
+  left: 50%;
+  top: -0.66em;
+  font-size: 0.5em;
+  letter-spacing: 0;
+  text-shadow: none;
+  animation: bee-hover 1.4s ease-in-out infinite;
+}
+@keyframes bee-hover {
+  0%, 100% { transform: translateX(-50%) translateY(0) rotate(-8deg); }
+  50%      { transform: translateX(-42%) translateY(-4px) rotate(8deg); }
 }
 
 .overlay .tagline {

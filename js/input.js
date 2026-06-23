@@ -105,6 +105,7 @@ class InputController {
 
   _command(tileX, tileY) {
     if (this.selection.size === 0) return;
+    if (typeof Sfx !== 'undefined') Sfx.play('command');
     const tx = Math.floor(tileX);
     const ty = Math.floor(tileY);
 
@@ -200,6 +201,7 @@ class InputController {
       if (e.button !== 0 || !this._dragging) return;
       this._dragging = false;
 
+      const before = this.selection.size;
       if (this._moved) {
         if (!this._shift) this._clearSelection();
         this._selectInBox(this.dragBox);
@@ -218,6 +220,8 @@ class InputController {
           this._clearSelection();
         }
       }
+      // Chirp when the selection actually gains ants.
+      if (typeof Sfx !== 'undefined' && this.selection.size > before) Sfx.play('select');
       this.dragBox = null;
     });
 

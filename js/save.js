@@ -47,6 +47,9 @@ function _serColony(c) {
   return {
     id: c.id, tint: c.tint, isPlayer: c.isPlayer, isWild: !!c.isWild,
     patrol: !!c.patrol,
+    honeyRaid: !!c.honeyRaid,
+    bullyBees: !!c.bullyBees,
+    eggRoom: c.eggRoom || null,
     home: c.home, shaftX: c.shaftX, surfaceOpen: !!c.surfaceOpen,
     entranceUnder: c.entranceUnder || null, entranceOut: c.entranceOut || null,
     queen: c.queen ? _serAnt(c.queen) : null,
@@ -66,7 +69,12 @@ function serializeGame(world, levelIndex, view) {
     grid: _serGrid(world.grid),
     surface: world.surface ? _serGrid(world.surface) : null,
     hive: world.hive || null,
-    foods: world.foods.map((f) => ({ x: Math.round(f.x), y: Math.round(f.y), area: f.area })),
+    bridge: world.bridge || null,
+    foodGen: world.foodGen || null,
+    foods: world.foods.map((f) => ({
+      x: Math.round(f.x), y: Math.round(f.y), area: f.area,
+      isHoney: !!f.isHoney, value: f.value || 1,
+    })),
     colonies: world.colonies.map(_serColony),
   };
 }
@@ -76,11 +84,19 @@ function deserializeGame(data) {
   const world = new World(grid);
   if (data.surface) world.surface = _deserGrid(data.surface);
   if (data.hive) world.hive = data.hive;
+  if (data.bridge) {
+    world.bridge = data.bridge;
+    if (world.surface) world.surface.bridge = data.bridge; // for the renderer
+  }
+  if (data.foodGen) world.foodGen = data.foodGen;
 
   for (const cd of data.colonies) {
     const col = new Colony(cd.id, cd.tint, cd.isPlayer);
     col.isWild = cd.isWild;
     col.patrol = cd.patrol;
+    col.honeyRaid = !!cd.honeyRaid;
+    col.bullyBees = !!cd.bullyBees;
+    col.eggRoom = cd.eggRoom || null;
     col.shaftX = cd.shaftX;
     col.surfaceOpen = cd.surfaceOpen;
     col.entranceUnder = cd.entranceUnder;
@@ -104,7 +120,11 @@ function deserializeGame(data) {
     }
   }
 
-  for (const f of data.foods) world.foods.push(new Food(f.x, f.y, f.area));
+  for (const f of data.foods) {
+    const food = new Food(f.x, f.y, f.area);
+    if (f.isHoney) { food.isHoney = true; food.value = f.value || CONFIG.HONEY_MIN_VALUE; }
+    world.foods.push(food);
+  }
 
   return { world, levelIndex: data.levelIndex || 0, view: data.view || 'under' };
 }

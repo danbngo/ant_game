@@ -23,6 +23,11 @@ function randomCaste() {
   if ((r -= w.forager) < 0) return CONFIG.ANT_FORAGER;
   if ((r -= w.builder) < 0) return CONFIG.ANT_BUILDER;
   if ((r -= w.drone) < 0) return CONFIG.ANT_DRONE;
+  if ((r -= w.caretaker) < 0) return CONFIG.ANT_CARETAKER;
+  if ((r -= w.beehater) < 0) return CONFIG.ANT_BEEHATER;
+  if ((r -= w.beewarrior) < 0) return CONFIG.ANT_BEEWARRIOR;
+  if ((r -= w.foodcollector) < 0) return CONFIG.ANT_FOODCOLLECTOR;
+  if ((r -= w.renter) < 0) return CONFIG.ANT_RENTER;
   return CONFIG.ANT_WORKER;
 }
 
@@ -35,6 +40,13 @@ class Ant {
     this.isForager = type === CONFIG.ANT_FORAGER;
     this.isBuilder = type === CONFIG.ANT_BUILDER;
     this.isDrone = type === CONFIG.ANT_DRONE;
+    this.isCaretaker = type === CONFIG.ANT_CARETAKER;
+    this.isBeeHater = type === CONFIG.ANT_BEEHATER;
+    this.isBeeWarrior = type === CONFIG.ANT_BEEWARRIOR;
+    this.isFoodCollector = type === CONFIG.ANT_FOODCOLLECTOR;
+    this.isGuard = type === CONFIG.ANT_GUARD;
+    this.isRenter = type === CONFIG.ANT_RENTER;
+    this.isVincant = type === CONFIG.ANT_VINCANT;
     this.isWorker = type === CONFIG.ANT_WORKER;
     // Color variant; defaults to dark red. See TINTS in config.js.
     this.tint = tint || DEFAULT_TINT;
@@ -60,6 +72,20 @@ class Ant {
       speed = CONFIG.BUILDER_SPEED; hp = CONFIG.BUILDER_HP; dmg = CONFIG.BUILDER_DAMAGE; def = CONFIG.BUILDER_DEFENSE;
     } else if (this.isDrone) {
       speed = CONFIG.DRONE_SPEED; hp = CONFIG.DRONE_HP; dmg = CONFIG.DRONE_DAMAGE; def = CONFIG.DRONE_DEFENSE;
+    } else if (this.isCaretaker) {
+      speed = CONFIG.CARETAKER_SPEED; hp = CONFIG.CARETAKER_HP; dmg = CONFIG.CARETAKER_DAMAGE; def = CONFIG.CARETAKER_DEFENSE;
+    } else if (this.isBeeHater) {
+      speed = CONFIG.BEEHATER_SPEED; hp = CONFIG.BEEHATER_HP; dmg = CONFIG.BEEHATER_DAMAGE; def = CONFIG.BEEHATER_DEFENSE;
+    } else if (this.isBeeWarrior) {
+      speed = CONFIG.BEEWARRIOR_SPEED; hp = CONFIG.BEEWARRIOR_HP; dmg = CONFIG.BEEWARRIOR_DAMAGE; def = CONFIG.BEEWARRIOR_DEFENSE;
+    } else if (this.isFoodCollector) {
+      speed = CONFIG.FOODCOLLECTOR_SPEED; hp = CONFIG.FOODCOLLECTOR_HP; dmg = CONFIG.FOODCOLLECTOR_DAMAGE; def = CONFIG.FOODCOLLECTOR_DEFENSE;
+    } else if (this.isGuard) {
+      speed = CONFIG.GUARD_SPEED; hp = CONFIG.GUARD_HP; dmg = CONFIG.GUARD_DAMAGE; def = CONFIG.GUARD_DEFENSE;
+    } else if (this.isRenter) {
+      speed = CONFIG.RENTER_SPEED; hp = CONFIG.RENTER_HP; dmg = CONFIG.RENTER_DAMAGE; def = CONFIG.RENTER_DEFENSE;
+    } else if (this.isVincant) {
+      speed = CONFIG.VINCANT_SPEED; hp = CONFIG.VINCANT_HP; dmg = CONFIG.VINCANT_DAMAGE; def = CONFIG.VINCANT_DEFENSE;
     } else {
       speed = CONFIG.WORKER_SPEED; hp = CONFIG.WORKER_HP; dmg = CONFIG.WORKER_DAMAGE; def = CONFIG.WORKER_DEFENSE;
     }
@@ -94,6 +120,11 @@ class Ant {
     this.layTimer = 0;       // queens only: time accumulated toward laying an egg
     this.wanderTimer = 0;    // queens only: time accumulated toward wandering
     this.layBoostTimer = 0;  // queens only: time left of post-mating lay speedup
+
+    // Speech bubble: {text, age}. Bee-haters use this to rant about bees.
+    this.speech = null;
+    this.talkTimer = CONFIG.BEEHATER_TALK_MIN + Math.random() *
+      (CONFIG.BEEHATER_TALK_MAX - CONFIG.BEEHATER_TALK_MIN);
   }
 
   // World-pixel center of the footprint, in TILE units.
@@ -234,5 +265,7 @@ class Food {
     this.y = Math.round(tileY);
     this.area = area || 'outside';
     this.carrier = null; // the ant hauling it, if any
+    this.value = 1;      // how much colony food this is worth when delivered
+    this.isHoney = false; // honey stolen from the hive is worth more
   }
 }

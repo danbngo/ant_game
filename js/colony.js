@@ -9,6 +9,9 @@ class Colony {
     this.workers = [];
     this.eggs = [];
     this.patrol = false; // when true, idle warriors patrol the surface
+    this.honeyRaid = false; // when true, food-collectors raid the hive for honey
+    this.bullyBees = false; // when true, bee-haters mob the hive and trash-talk
+    this.eggRoom = null;    // {x, y}: the dedicated chamber where eggs are laid
   }
 
   _claimAnt(ant) {

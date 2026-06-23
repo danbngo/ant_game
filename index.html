@@ -21,7 +21,15 @@
     </div>
     <button id="view-btn" type="button" title="Toggle surface / underground (V)">View: Underground</button>
     <button id="patrol-btn" type="button" title="Toggle warrior surface patrol (P)">Warriors: Defend</button>
+    <button id="honey-btn" type="button" title="Release food-collectors to raid the hive for honey (H)">Collect Honey</button>
+    <button id="bully-btn" type="button" title="Unleash bee-haters and bee-warriors on the hive (B)">Bee Hating: Off</button>
+    <button id="hive-btn" type="button" title="Peek inside the beehive">Enter Hive</button>
+    <button id="index-btn" type="button" title="Index of ants, bees, and bugs">Index</button>
     <button id="save-btn" type="button" title="Save game">Save</button>
+    <button id="music-btn" type="button" title="Toggle sound">&#9835; Sound: On</button>
+
+    <!-- Hidden YouTube background-music player (IFrame Player API). -->
+    <div id="yt-music" aria-hidden="true"></div>
     <div id="pan-controls">
       <button data-pan="up" type="button" title="Pan up">&#9650;</button>
       <div class="pan-row">
@@ -38,16 +46,80 @@
       Right-click: move / attack enemy / loot egg / dig dirt<br />
       WASD: drive selection<br />
       Arrow keys / d-pad: pan &nbsp;&middot;&nbsp; Wheel: zoom<br />
-      V: surface &harr; underground &nbsp;&middot;&nbsp; P: warrior patrol
+      V: surface &harr; underground &nbsp;&middot;&nbsp; P: warrior patrol<br />
+      H: collect honey &nbsp;&middot;&nbsp; B: bee hating
     </div>
 
     <!-- Title screen -->
     <div id="title-screen" class="overlay">
-      <h1>ANT&nbsp;FARM</h1>
+      <h1><span class="ant-word">ANT<span class="title-ant">🐜</span></span>&nbsp;<span class="ant-word">FARM<span class="title-bee">🐝</span></span></h1>
       <p class="tagline">Grow your colony. Crush the rivals.</p>
       <button id="play-btn" type="button">Play</button>
       <button id="continue-btn" type="button" style="display:none">Continue Saved Game</button>
       <p class="hint">Destroy every enemy queen to win each level. Protect your own.</p>
+    </div>
+
+    <!-- Team select: shown after Play; pick the colored ant team you'll lead. -->
+    <div id="team-screen" class="overlay" style="display:none">
+      <h1>Choose Your Team</h1>
+      <p class="tagline">Pick the colony you'll lead.</p>
+      <div id="team-buttons">
+        <button class="team-btn" type="button" data-tint="darkRed">
+          <canvas width="90" height="90"></canvas><span>Red</span>
+        </button>
+        <button class="team-btn" type="button" data-tint="blue">
+          <canvas width="90" height="90"></canvas><span>Blue</span>
+        </button>
+        <button class="team-btn" type="button" data-tint="black">
+          <canvas width="90" height="90"></canvas><span>Black</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Index / bestiary of all ants, bees, and bugs. -->
+    <div id="index-screen" style="display:none">
+      <div id="index-panel">
+        <h2>Index</h2>
+        <h3>🐜 Ants (your colony)</h3>
+        <ul>
+          <li><b>👑 Queen</b> — lays eggs in the egg room. Protect her at all costs.</li>
+          <li><b>🐜 Worker</b> — the basic all-rounder.</li>
+          <li><b>⚔️ Warrior</b> — hunts enemies and trash-talks its kills.</li>
+          <li><b>🛡️ Guard</b> — 3 elite bodyguards; they only ever defend the queen.</li>
+          <li><b>✚ Nursery</b> — feeds eggs so they hatch faster.</li>
+          <li><b>✕ Caretaker</b> — keeps eggs tended so they stay colored.</li>
+          <li><b>🌾 Forager</b> — gathers food on the surface.</li>
+          <li><b>🍗 Food-collector</b> — gathers food and raids the hive for honey.</li>
+          <li><b>⛏️ Builder</b> — digs tunnels and builds walls.</li>
+          <li><b>💗 Drone</b> — mates with the queen to speed up egg-laying.</li>
+          <li><b>🚫🐝 Bee-hater</b> — the weakest ant; just rants about bees.</li>
+          <li><b>🐝⚔️ Bee-warrior</b> — only ever attacks bees.</li>
+          <li><b>💵 Renting ant</b> — spends 1 food to rent assassin bugs (each rental makes the next assassin arrive 0.5s sooner).</li>
+          <li><b>👑 Vincant</b> — the immortal special drone (only on your team, one at a time). Strong, super-fast, acid-splinter attacks, hunts bugs, feeds eggs, patrols, trash-talks, and visits Beena in the hive.</li>
+        </ul>
+        <h3>🐝 Bees (the hive)</h3>
+        <ul>
+          <li><b>🐝 Bee</b> — stinger guard that swarms intruders near the hive.</li>
+          <li><b>🛡️🐝 Armored bee</b> — tanky, heavily-armored hive guard.</li>
+          <li><b>👑 Queen Beena</b> — the hive's queen bee (and Beena!).</li>
+        </ul>
+        <h3>🪲 Bugs (wildlife)</h3>
+        <ul>
+          <li><b>🐞 Ladybug</b> — harmless wanderer.</li>
+          <li><b>🦗 Grasshopper</b> — skittish; flees from ants.</li>
+          <li><b>🥢 Stick bug</b> — slow, harmless twig-like wanderer.</li>
+          <li><b>🪲 Beetle</b> — dangerous and tanky; attacks your ants.</li>
+          <li><b>🗡️ Assassin bug</b> — hired killer that hunts the hive's bees; spawns every 15s (sooner if renting ants rent more).</li>
+        </ul>
+      </div>
+      <button id="index-close-btn" type="button">Close</button>
+    </div>
+
+    <!-- Inside-the-hive battle scene (overlay). -->
+    <div id="hive-screen" style="display:none">
+      <canvas id="hive-canvas"></canvas>
+      <h2 id="hive-title">Inside the Hive</h2>
+      <button id="hive-leave-btn" type="button">Leave Hive</button>
     </div>
 
     <!-- Level complete / game over / victory -->
@@ -60,6 +132,9 @@
 
   <!-- Loose JS, loaded in dependency order. No bundler. -->
   <script src="js/config.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/music.js"></script>
+  <script src="js/hive.js"></script>
   <script src="js/levels.js"></script>
   <script src="js/grid.js"></script>
   <script src="js/pathfind.js"></script>
