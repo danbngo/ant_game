@@ -273,7 +273,7 @@ const CONFIG = {
   ASSASSIN_MAX: 7,             // most assassin bugs alive on the surface at once
   RENT_INTERVAL: 4,            // seconds between a renting ant's rentals
   RENT_COST: 1,               // food a renting ant spends per rental
-  RENT_SPEEDUP: 0.5,          // seconds sooner the next assassin arrives per rental
+  RENT_SPEEDUP: 0.001,        // fraction of the spawn interval advanced per rental (0.1% sooner)
 
   // Beehive in the tree: bees swarm anyone who gets too close.
   HIVE_GUARD_RANGE: 6,      // bees attack ants within this of the hive

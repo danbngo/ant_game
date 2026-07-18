@@ -102,6 +102,31 @@ class World {
     return null;
   }
 
+  // Faction-relative versions used for issuing orders: "enemy" means any colony
+  // other than the one with id `faction`. In single-player faction === 'player',
+  // so these behave exactly like the isPlayer-relative lookups above; in
+  // multiplayer each human resolves enemies relative to their own colony.
+  enemyAntAtFor(faction, tileX, tileY) {
+    let hit = null;
+    for (const c of this.colonies) {
+      if (c.id === faction) continue;
+      for (const a of c.allAnts()) {
+        if (tileX >= a.x && tileX < a.x + a.size && tileY >= a.y && tileY < a.y + a.size) hit = a;
+      }
+    }
+    return hit;
+  }
+
+  enemyEggAtFor(faction, tx, ty) {
+    for (const c of this.colonies) {
+      if (c.id === faction) continue;
+      for (const e of c.eggs) {
+        if (!e.carrier && Math.round(e.x) === tx && Math.round(e.y) === ty) return e;
+      }
+    }
+    return null;
+  }
+
   removeEgg(egg) {
     if (!egg.colony) return;
     const arr = egg.colony.eggs;
@@ -138,6 +163,23 @@ class World {
       if (p.area !== ant.area) continue; // only fight within the same area
       const d = Math.hypot(p.cx - ant.cx, p.cy - ant.cy);
       if (d < bestD) { bestD = d; best = p; }
+    }
+    return { ant: best, dist: bestD };
+  }
+
+  // Nearest ant belonging to ANY human-controlled colony (the player and, in
+  // multiplayer, each other human). Enemy AI hunts whichever human is closest,
+  // so both players are fair game. Falls back to the player colony.
+  nearestHumanAnt(ant) {
+    let best = null;
+    let bestD = Infinity;
+    for (const c of this.colonies) {
+      if (!(c.isPlayer || c.human)) continue;
+      for (const p of c.allAnts()) {
+        if (p.area !== ant.area) continue;
+        const d = Math.hypot(p.cx - ant.cx, p.cy - ant.cy);
+        if (d < bestD) { bestD = d; best = p; }
+      }
     }
     return { ant: best, dist: bestD };
   }
@@ -388,7 +430,7 @@ class World {
         const nurse = c.allAnts().find((n) => n.isNursery && n.food >= CONFIG.RENT_COST);
         if (nurse) {
           nurse.food -= CONFIG.RENT_COST;
-          this.assassinTimer = (this.assassinTimer || 0) + CONFIG.RENT_SPEEDUP;
+          this.assassinTimer = (this.assassinTimer || 0) + CONFIG.ASSASSIN_SPAWN_INTERVAL * CONFIG.RENT_SPEEDUP;
           a.speech = { text: 'Rented an assassin!', age: 0 };
         }
       }
@@ -1226,15 +1268,15 @@ class World {
   // (player included) auto-attacks any enemy that wanders close, as long as
   // they aren't busy with a deliberate loot/dig/return order.
   _assignCombat() {
-    // 1) Enemy colonies actively hunt the player.
+    // 1) Enemy colonies actively hunt the nearest human colony.
     for (const c of this.colonies) {
-      if (c.isPlayer || c.isWild) continue; // wildlife has its own behavior
+      if (c.isPlayer || c.isWild || c.human) continue; // humans + wildlife self-drive
       for (const a of c.allAnts()) {
         if (a.isNursery || a.isDrone) continue; // nurses & drones never fight
         if (a.isBeeWarrior) continue; // bee-warriors only ever fight bees
         if (this._hasLiveAttack(a)) continue;
         const range = a.isQueen ? CONFIG.ATTACK_RANGE + 0.5 : CONFIG.AGGRO_RANGE;
-        const near = this.nearestPlayerAnt(a);
+        const near = this.nearestHumanAnt(a);
         if (near && near.ant && near.dist <= range) {
           a.order = { type: 'attack', target: near.ant };
         }

@@ -2,6 +2,11 @@
 // Positions are stored in WHOLE tile coordinates (locked to the grid).
 // (x, y) is the top-left tile the entity occupies; `size` is its footprint in tiles.
 
+// Stable per-entity ids, so multiplayer clients can refer to the same ant/egg/
+// food across network snapshots. Purely in-memory; not persisted to saves.
+let _nextEntId = 1;
+function nextEntId() { return _nextEntId++; }
+
 // The 8 allowed facing directions (cardinals + diagonals), as angles in radians.
 // Index 0 = East, going clockwise in screen space.
 const DIRECTIONS = [];
@@ -33,6 +38,7 @@ function randomCaste() {
 
 class Ant {
   constructor(type, tileX, tileY, tint) {
+    this.id = nextEntId(); // stable id for multiplayer sync
     this.type = type; // queen | worker | warrior | nursery
     this.isQueen = type === CONFIG.ANT_QUEEN;
     this.isWarrior = type === CONFIG.ANT_WARRIOR;
@@ -220,6 +226,7 @@ class Ant {
 
 class Egg {
   constructor(tileX, tileY, caste) {
+    this.id = nextEntId(); // stable id for multiplayer sync
     this.type = CONFIG.EGG;
     this.size = 1; // 1x1 tile, locked to the grid
     this.x = Math.round(tileX);
@@ -259,6 +266,7 @@ class Critter extends Ant {
 // A morsel of food, to be foraged. Food grows on the surface (outside).
 class Food {
   constructor(tileX, tileY, area) {
+    this.id = nextEntId(); // stable id for multiplayer sync
     this.type = CONFIG.FOOD;
     this.size = 1;
     this.x = Math.round(tileX);

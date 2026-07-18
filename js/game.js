@@ -18,6 +18,22 @@
   const selection = new Set();
   let input = null;
 
+  // --- Multiplayer state ---------------------------------------------------
+  // mpRole: null (single-player) | 'host' (runs the sim, broadcasts snapshots)
+  //         | 'guest' (renders snapshots, sends input to the host).
+  let mpRole = null;
+  let guestColony = null;   // host-side: the colony the guest controls
+  let pendingSnap = null;   // guest-side: latest snapshot awaiting apply
+  let snapTimer = 0;        // host-side: accumulates toward the next broadcast
+  let mpEnded = false;      // guard so the match-over message fires once
+  const selIds = new Set(); // guest-side: selected ant ids, survive snapshot rebuilds
+  const SNAP_HZ = 15;       // world snapshots per second
+  const isHost = () => mpRole === 'host';
+  const isGuest = () => mpRole === 'guest';
+  // Reopen the multiplayer lobby (assigned by setupMultiplayerUI). Used after a
+  // match ends so a defeated player can immediately find another opponent.
+  let openMultiplayerLobby = () => showTitle();
+
   // Strategy-toggle cooldowns: patrol / honey raid / bee hating can each only be
   // flipped once every COOLDOWN_MS. Values are the performance.now() timestamp
   // at which the toggle becomes available again.
@@ -55,28 +71,50 @@
     return spots;
   }
 
-  function buildLevel(def) {
+  function buildLevel(def, opts) {
     const grid = new Grid(def.cols, def.rows);
     const w = new World(grid);
-    const player = def.nests[0];
+    const mp = opts && opts.mp;
 
-    // Apply the chosen team color: give the player their pick, and if an enemy
-    // already used that color, swap colors so every colony stays distinct.
-    const tintOf = new Map(def.nests.map((n) => [n, n.tint]));
-    if (selectedTint && selectedTint !== player.tint) {
+    // Per-nest role assignment: tint, which nest is the isPlayer colony, which
+    // colonies are human-controlled (no AI), and which human's nest gets Vincant.
+    // Single-player: nest[0] is the human/player, recolored to their pick. MP:
+    // each human controls the nest whose natural color they chose.
+    const roleOf = new Map();
+    let hub;
+    if (mp) {
+      const { hostColor, guestColor, vincantColor } = opts;
       for (const n of def.nests) {
-        if (n !== player && tintOf.get(n) === selectedTint) tintOf.set(n, player.tint);
+        const human = n.tint === hostColor || n.tint === guestColor;
+        roleOf.set(n, {
+          tint: n.tint, isPlayer: n.tint === hostColor, human, vincant: n.tint === vincantColor,
+        });
       }
-      tintOf.set(player, selectedTint);
+      hub = def.nests.find((n) => roleOf.get(n).isPlayer) || def.nests[0];
+    } else {
+      const player = def.nests[0];
+      const tintOf = new Map(def.nests.map((n) => [n, n.tint]));
+      if (selectedTint && selectedTint !== player.tint) {
+        for (const n of def.nests) {
+          if (n !== player && tintOf.get(n) === selectedTint) tintOf.set(n, player.tint);
+        }
+        tintOf.set(player, selectedTint);
+      }
+      for (const n of def.nests) {
+        roleOf.set(n, { tint: tintOf.get(n), isPlayer: n === player, human: n === player, vincant: n === player });
+      }
+      hub = player;
     }
 
     for (const n of def.nests) {
       grid.carveChamber(n.cx, n.cy, 5);
-      if (n !== player) grid.carveTunnel(player.cx, player.cy, n.cx, n.cy);
+      if (n !== hub) grid.carveTunnel(hub.cx, hub.cy, n.cx, n.cy);
     }
 
     for (const n of def.nests) {
-      const colony = w.addColony(new Colony(n.id, tintOf.get(n), n === player));
+      const role = roleOf.get(n);
+      const colony = w.addColony(new Colony(n.id, role.tint, role.isPlayer));
+      colony.human = role.human;
       colony.setQueen(n.cx - 1, n.cy - 1);
 
       // A dedicated egg room: its own chamber, off to the side of the nest,
@@ -115,8 +153,8 @@
       const guardSpots = ringSpots(grid, n.cx, n.cy, 3, 2).filter(free);
       for (const s of guardSpots) colony.addAnt(CONFIG.ANT_GUARD, s.x, s.y);
 
-      // Vincant: exactly one, only on the player's team, never from an egg.
-      if (n === player) {
+      // Vincant: exactly one, on the chosen human's team, never from an egg.
+      if (role.vincant) {
         const vs = ringSpots(grid, n.cx, n.cy, 1, 3).filter(free)[0] || { x: n.cx, y: n.cy };
         colony.addAnt(CONFIG.ANT_VINCANT, vs.x, vs.y);
       }
@@ -143,6 +181,7 @@
     w.spawnHive(Math.floor(def.cols * 0.3), CONFIG.SURFACE_ROWS - 9);
 
     w.seedFood(def.food || 25);
+    w.controlled = w.player; // the colony THIS client drives (overridden in MP)
     return w;
   }
 
@@ -151,11 +190,12 @@
     const cols = world.grid.cols;
     const rows = world.grid.rows;
     const sRows = world.surface ? world.surface.rows : CONFIG.SURFACE_ROWS;
+    const homeCol = world.controlled || world.player;
     cameraUnder = new Camera(canvas.width, canvas.height, cols * T, rows * T);
-    cameraUnder.x = world.player.home.x * T;
-    cameraUnder.y = world.player.home.y * T;
+    cameraUnder.x = homeCol.home.x * T;
+    cameraUnder.y = homeCol.home.y * T;
     cameraOutside = new Camera(canvas.width, canvas.height, cols * T, sRows * T);
-    cameraOutside.x = world.player.home.x * T;
+    cameraOutside.x = homeCol.home.x * T;
     // Focus on the ground band (where the action is); tall sky sits above.
     cameraOutside.y = (sRows - CONFIG.SURFACE_GROUND_BAND / 2) * T;
 
@@ -178,13 +218,203 @@
     document.body.classList.add('playing');
     state = 'playing';
     autoSaveTimer = 0;
-    writeSave(); // snapshot the new state immediately
+    if (!mpRole) writeSave(); // snapshot the new state (single-player only)
   }
 
   function startLevel(idx) {
     levelIndex = idx;
     world = buildLevel(LEVELS[idx]);
     enterWorld('under');
+  }
+
+  // --- Multiplayer: snapshots + command handling ---------------------------
+
+  // Compact per-ant snapshot. cf: carried food (0 none / 1 food / 2 honey);
+  // ce: carried-egg caste; inHive: tucked inside the hive (Vincant/depressed bee).
+  function serAntSnap(a) {
+    return {
+      id: a.id, type: a.type, critter: a.critter || null,
+      x: Math.round(a.x * 100) / 100, y: Math.round(a.y * 100) / 100,
+      hp: Math.round(a.hp * 10) / 10, area: a.area, dir: a.dir,
+      sp: a.speech ? a.speech.text : null,
+      cf: a.carriedFood ? (a.carriedFood.isHoney ? 2 : 1) : 0,
+      ce: a.carrying ? a.carrying.caste : null,
+      ih: a.insideHive ? 1 : 0,
+    };
+  }
+
+  // Per-tick dynamic snapshot: everything that moves. Static geometry (grids,
+  // hive, bridge, food generator, colony metadata) is sent once via the 'full'
+  // message. Purely-cosmetic effects (hearts/bullets/smoke) are not synced.
+  function serializeSnapshot(w) {
+    return {
+      t: 'snap',
+      cols: w.colonies.map((c) => ({
+        id: c.id, patrol: !!c.patrol, honeyRaid: !!c.honeyRaid, bullyBees: !!c.bullyBees,
+        queen: c.queen && c.queen.hp > 0 ? serAntSnap(c.queen) : null,
+        workers: c.workers.filter((a) => a.hp > 0).map(serAntSnap),
+        eggs: c.eggs.filter((e) => !e.carrier).map((e) => ({
+          id: e.id, x: Math.round(e.x), y: Math.round(e.y), caste: e.caste,
+        })),
+      })),
+      foods: w.foods.filter((f) => !f.carrier).map((f) => ({
+        id: f.id, x: Math.round(f.x), y: Math.round(f.y), area: f.area,
+        honey: f.isHoney ? 1 : 0, value: f.value || 1,
+      })),
+    };
+  }
+
+  // Static world description, sent once when a level begins.
+  function serializeFull(w, lvl, viewName) {
+    return {
+      t: 'full', levelIndex: lvl, view: viewName || 'under',
+      grid: _serGrid(w.grid),
+      surface: w.surface ? _serGrid(w.surface) : null,
+      hive: w.hive || null, bridge: w.bridge || null, foodGen: w.foodGen || null,
+      colonies: w.colonies.map((c) => ({
+        id: c.id, tint: c.tint, isPlayer: !!c.isPlayer, isWild: !!c.isWild, human: !!c.human,
+        home: c.home, shaftX: c.shaftX, surfaceOpen: !!c.surfaceOpen,
+        entranceUnder: c.entranceUnder || null, entranceOut: c.entranceOut || null,
+        eggRoom: c.eggRoom || null,
+      })),
+    };
+  }
+
+  // Guest: build the local world skeleton from a 'full' message, then enter play.
+  function applyFull(m) {
+    const w = new World(_deserGrid(m.grid));
+    if (m.surface) {
+      w.surface = _deserGrid(m.surface);
+      if (m.bridge) w.surface.bridge = m.bridge;
+    }
+    w.hive = m.hive; w.bridge = m.bridge; w.foodGen = m.foodGen;
+    for (const cm of m.colonies) {
+      const c = new Colony(cm.id, cm.tint, cm.isPlayer);
+      c.isWild = cm.isWild; c.human = cm.human;
+      c.home = cm.home; c.shaftX = cm.shaftX; c.surfaceOpen = cm.surfaceOpen;
+      c.entranceUnder = cm.entranceUnder; c.entranceOut = cm.entranceOut; c.eggRoom = cm.eggRoom;
+      w.addColony(c);
+      if (cm.isWild) w.wild = c;
+    }
+    world = w;
+    levelIndex = m.levelIndex || 0;
+    // The colony this guest drives is the one wearing its chosen color.
+    world.controlled = world.colonies.find((c) => c.tint === Net.color) || world.player;
+    mpEnded = false;
+    selIds.clear();
+    enterWorld(m.view);
+  }
+
+  function buildAntFromSnap(colony, s) {
+    const a = s.critter ? new Critter(s.critter, s.x, s.y) : new Ant(s.type, s.x, s.y);
+    a.id = s.id;
+    a.colony = colony; a.faction = colony.id; a.tint = colony.tint;
+    a.x = s.x; a.y = s.y; a.hp = s.hp; a.area = s.area;
+    a.setDir(s.dir);
+    a.speech = s.sp ? { text: s.sp, age: 0 } : null;
+    a.insideHive = !!s.ih;
+    if (s.cf) { const f = new Food(a.x, a.y, a.area); f.isHoney = s.cf === 2; a.carriedFood = f; }
+    if (s.ce) { a.carrying = new Egg(a.x, a.y, s.ce); }
+    return a;
+  }
+
+  // Guest: overwrite dynamic state from a snapshot, preserving selection by id.
+  function applySnapshot(snap) {
+    if (!world) return;
+    // Remember which ants the player has selected, by id, before we rebuild them.
+    selIds.clear();
+    for (const a of selection) selIds.add(a.id);
+
+    for (const cs of snap.cols) {
+      const c = world.colonies.find((x) => x.id === cs.id);
+      if (!c) continue;
+      c.patrol = cs.patrol; c.honeyRaid = cs.honeyRaid; c.bullyBees = cs.bullyBees;
+      c.queen = cs.queen ? buildAntFromSnap(c, cs.queen) : null;
+      c.workers = cs.workers.map((s) => buildAntFromSnap(c, s));
+      c.eggs = cs.eggs.map((es) => {
+        const e = new Egg(es.x, es.y, es.caste);
+        e.id = es.id; e.colony = c; e.faction = c.id;
+        return e;
+      });
+    }
+    world.foods = snap.foods.map((fs) => {
+      const f = new Food(fs.x, fs.y, fs.area);
+      f.id = fs.id; f.isHoney = !!fs.honey; f.value = fs.value;
+      return f;
+    });
+
+    // Re-resolve the selection against the freshly rebuilt ants.
+    selection.clear();
+    const col = world.controlled;
+    if (col) {
+      const byId = new Map(col.allAnts().map((a) => [a.id, a]));
+      for (const id of selIds) { const a = byId.get(id); if (a) selection.add(a); }
+    }
+  }
+
+  // Host: apply a command received from the guest to the guest's colony.
+  function applyGuestCommand(m) {
+    if (!isHost() || !guestColony) return;
+    if (m.kind === 'order') {
+      const ids = new Set(m.ids || []);
+      const ants = guestColony.allAnts().filter((a) => ids.has(a.id));
+      if (ants.length) applyOrderToAnts(world, ants, m.area, m.x, m.y, guestColony.id);
+    } else if (m.kind === 'toggle') {
+      if (m.which === 'patrol' || m.which === 'honeyRaid' || m.which === 'bullyBees') {
+        guestColony[m.which] = !guestColony[m.which];
+      }
+    }
+  }
+
+  // Host: kick off a multiplayer match once both colors are locked in.
+  function startMPGame() {
+    mpRole = 'host';
+    mpEnded = false;
+    snapTimer = 0;
+    const def = LEVELS[0];
+    const hostColor = Net.color;
+    const guestColor = Net.peerColor;
+    // A random human gets Vincant, the immortal super-ant.
+    const vincantColor = Math.random() < 0.5 ? hostColor : guestColor;
+    levelIndex = 0;
+    world = buildLevel(def, { mp: true, hostColor, guestColor, vincantColor });
+    world.controlled = world.colonies.find((c) => c.tint === hostColor) || world.player;
+    guestColony = world.colonies.find((c) => c.tint === guestColor) || null;
+    enterWorld('under');
+    const owner = vincantColor === hostColor ? 'you' : 'your rival';
+    setLevelLabel('Multiplayer — Vincant joined ' + owner + '!');
+    Net.send(serializeFull(world, 0, 'under'));
+    Net.send(serializeSnapshot(world));
+  }
+
+  // Route relayed gameplay messages depending on our role.
+  function onNetMessage(m) {
+    if (isHost()) {
+      if (m.t === 'cmd') applyGuestCommand(m);
+      return;
+    }
+    // Guest.
+    if (m.t === 'full') { mpRole = 'guest'; applyFull(m); }
+    else if (m.t === 'snap') { pendingSnap = m; }
+    else if (m.t === 'msg') {
+      mpEnded = true;
+      if (typeof Sfx !== 'undefined') Sfx.play(/victory/i.test(m.title) ? 'win' : 'lose');
+      showMessage(m.title, m.sub + ' Find another opponent?', 'Find New Match',
+        () => openMultiplayerLobby());
+    }
+  }
+
+  function onPeerLeft() {
+    if (!mpRole || state !== 'playing') return;
+    showMessage('Opponent Left', 'Your rival disconnected.', 'Find New Match',
+      () => openMultiplayerLobby());
+  }
+
+  function leaveMultiplayer() {
+    mpRole = null;
+    guestColony = null;
+    pendingSnap = null;
+    mpEnded = false;
   }
 
   // --- Save / load ---------------------------------------------------------
@@ -213,7 +443,7 @@
   // Auto-save the game in progress so the last session is always loadable.
   let autoSaveTimer = 0;
   function autoSave(dt) {
-    if (state !== 'playing' || !world) return;
+    if (state !== 'playing' || !world || mpRole) return;
     autoSaveTimer += dt;
     if (autoSaveTimer >= 10) { autoSaveTimer = 0; writeSave(); }
   }
@@ -272,46 +502,38 @@
     btn.classList.toggle('cooldown', left > 0);
   }
 
-  function togglePatrol() {
-    if (state !== 'playing' || !world || !world.player) return;
-    if (cooldownLeft('patrol') > 0) return; // still cooling down
-    world.player.patrol = !world.player.patrol;
-    startCooldown('patrol');
+  // Flip a colony strategy flag. Guests send the request to the host (who is
+  // authoritative) and flip locally only for instant button feedback; the next
+  // snapshot confirms it.
+  function toggleStrategy(name, flag) {
+    if (state !== 'playing' || !world) return;
+    const col = world.controlled || world.player;
+    if (!col || cooldownLeft(name) > 0) return;
+    if (isGuest()) Net.send({ t: 'cmd', kind: 'toggle', which: flag });
+    col[flag] = !col[flag];
+    startCooldown(name);
     if (typeof Sfx !== 'undefined') Sfx.play('click');
-    updatePatrolButton();
   }
+
+  function togglePatrol() { toggleStrategy('patrol', 'patrol'); updatePatrolButton(); }
+  function toggleHoneyRaid() { toggleStrategy('honey', 'honeyRaid'); updateHoneyButton(); }
+  function toggleBullyBees() { toggleStrategy('bully', 'bullyBees'); updateBullyButton(); }
+
+  function ctrlCol() { return world && (world.controlled || world.player); }
 
   function updatePatrolButton() {
-    const on = world && world.player && world.player.patrol;
-    renderToggleBtn('patrol-btn', 'patrol', 'Warriors: Patrol', 'Warriors: Defend', on);
-  }
-
-  function toggleHoneyRaid() {
-    if (state !== 'playing' || !world || !world.player) return;
-    if (cooldownLeft('honey') > 0) return; // still cooling down
-    world.player.honeyRaid = !world.player.honeyRaid;
-    startCooldown('honey');
-    if (typeof Sfx !== 'undefined') Sfx.play('click');
-    updateHoneyButton();
+    const c = ctrlCol();
+    renderToggleBtn('patrol-btn', 'patrol', 'Warriors: Patrol', 'Warriors: Defend', c && c.patrol);
   }
 
   function updateHoneyButton() {
-    const on = world && world.player && world.player.honeyRaid;
-    renderToggleBtn('honey-btn', 'honey', 'Honey Raid: ON', 'Collect Honey', on);
-  }
-
-  function toggleBullyBees() {
-    if (state !== 'playing' || !world || !world.player) return;
-    if (cooldownLeft('bully') > 0) return; // still cooling down
-    world.player.bullyBees = !world.player.bullyBees;
-    startCooldown('bully');
-    if (typeof Sfx !== 'undefined') Sfx.play('click');
-    updateBullyButton();
+    const c = ctrlCol();
+    renderToggleBtn('honey-btn', 'honey', 'Honey Raid: ON', 'Collect Honey', c && c.honeyRaid);
   }
 
   function updateBullyButton() {
-    const on = world && world.player && world.player.bullyBees;
-    renderToggleBtn('bully-btn', 'bully', 'Bee Hating: On', 'Bee Hating: Off', on);
+    const c = ctrlCol();
+    renderToggleBtn('bully-btn', 'bully', 'Bee Hating: On', 'Bee Hating: Off', c && c.bullyBees);
   }
 
   // Refresh the cooldown countdowns each frame while any are active.
@@ -337,14 +559,19 @@
     msgScreen.style.display = 'none';
     const ts = document.getElementById('team-screen');
     if (ts) ts.style.display = 'none';
+    const mp = document.getElementById('mp-screen');
+    if (mp) mp.style.display = 'none';
   }
   function showTitle() {
     state = 'title';
     world = null;
+    leaveMultiplayer();
     document.body.classList.remove('playing');
     msgScreen.style.display = 'none';
     const ts = document.getElementById('team-screen');
     if (ts) ts.style.display = 'none';
+    const mp = document.getElementById('mp-screen');
+    if (mp) mp.style.display = 'none';
     titleScreen.style.display = 'flex';
     updateLoadButton();
   }
@@ -434,8 +661,38 @@
 
   // --- Win / lose ----------------------------------------------------------
 
+  // Multiplayer is a duel between the two human colonies: whoever's queen falls
+  // loses. Only the host (authoritative) runs this; it messages the guest.
+  function checkEndMP() {
+    if (state !== 'playing' || mpEnded || !isHost()) return;
+    const hostCol = world.controlled;
+    const hostDead = !hostCol || !hostCol.queen || hostCol.queen.hp <= 0;
+    const guestDead = !guestColony || !guestColony.queen || guestColony.queen.hp <= 0;
+    if (!hostDead && !guestDead) return;
+    mpEnded = true;
+    let hostMsg;
+    let guestMsg;
+    if (hostDead && guestDead) {
+      hostMsg = ['Draw', 'Both queens have fallen.'];
+      guestMsg = hostMsg;
+    } else if (hostDead) {
+      hostMsg = ['Game Over', 'Your queen has fallen.'];
+      guestMsg = ['Victory!', "Your rival's queen has fallen."];
+    } else {
+      hostMsg = ['Victory!', "Your rival's queen has fallen."];
+      guestMsg = ['Game Over', 'Your queen has fallen.'];
+    }
+    Net.send(serializeSnapshot(world)); // let the guest see the final positions
+    Net.send({ t: 'msg', title: guestMsg[0], sub: guestMsg[1] });
+    if (typeof Sfx !== 'undefined') Sfx.play(hostDead ? 'lose' : 'win');
+    // A defeated (or victorious) player goes back to the lobby to face another.
+    showMessage(hostMsg[0], hostMsg[1] + ' Find another opponent?', 'Find New Match',
+      () => openMultiplayerLobby());
+  }
+
   function checkEnd() {
     if (state !== 'playing') return;
+    if (mpRole) { checkEndMP(); return; }
     if (!world.player.queen) {
       if (typeof Sfx !== 'undefined') Sfx.play('lose');
       showMessage('Game Over', 'Your queen has fallen.', 'Retry Level',
@@ -474,6 +731,14 @@
       camera.y = clamp(camera.y, 0, camera.worldH);
     }
 
+    // Guests don't simulate: they just apply the host's latest snapshot and
+    // render it. Camera panning above still works locally. (WASD driving is
+    // host/single-player only; guests move via right-click orders.)
+    if (isGuest()) {
+      if (pendingSnap) { applySnapshot(pendingSnap); pendingSnap = null; }
+      return;
+    }
+
     const { dx, dy } = input.getMoveVector();
     if ((dx !== 0 || dy !== 0) && selection.size) {
       const g = view === 'under' ? world.grid : world.surface;
@@ -486,6 +751,13 @@
     world.update(dt);
     for (const ant of [...selection]) if (ant.hp <= 0) selection.delete(ant);
     autoSave(dt);
+
+    // Host broadcasts world snapshots at a fixed rate for the guest to render.
+    if (isHost()) {
+      snapTimer += dt;
+      if (snapTimer >= 1 / SNAP_HZ) { snapTimer = 0; Net.send(serializeSnapshot(world)); }
+    }
+
     checkEnd();
   }
 
@@ -599,9 +871,10 @@
   const foodCount = document.getElementById('food-count');
 
   function updateHud() {
-    if (!world || !world.player) return;
+    const col = world && (world.controlled || world.player);
+    if (!col) return;
     let total = 0;
-    for (const a of world.player.allAnts()) {
+    for (const a of col.allAnts()) {
       total += a.food || 0;
       if (a.carriedFood) total += 1;
     }
@@ -693,8 +966,130 @@
     if (cameraOutside) cameraOutside.resize(canvas.width, canvas.height);
   });
 
-  // Persist the last game when leaving the page.
-  window.addEventListener('beforeunload', () => { if (state === 'playing') writeSave(); });
+  // Persist the last game when leaving the page (single-player only).
+  window.addEventListener('beforeunload', () => { if (state === 'playing' && !mpRole) writeSave(); });
+
+  // --- Multiplayer lobby UI ------------------------------------------------
+
+  function setupMultiplayerUI() {
+    const mpScreen = document.getElementById('mp-screen');
+    const mpBtn = document.getElementById('mp-btn');
+    if (!mpScreen || !mpBtn || typeof Net === 'undefined') return;
+    const urlIn = document.getElementById('mp-url');
+    const roomIn = document.getElementById('mp-room');
+    const hostBtn = document.getElementById('mp-host-btn');
+    const joinBtn = document.getElementById('mp-join-btn');
+    const connPane = document.getElementById('mp-conn');
+    const lobbyPane = document.getElementById('mp-lobby');
+    const statusEl = document.getElementById('mp-status');
+    const startBtn = document.getElementById('mp-start-btn');
+    const backBtn = document.getElementById('mp-back-btn');
+    const errEl = document.getElementById('mp-error');
+    const colorBtns = [...mpScreen.querySelectorAll('.mp-color')];
+    let myColor = null;
+
+    const setStatus = (t) => { if (statusEl) statusEl.textContent = t; };
+    const showErr = (t) => { if (errEl) errEl.textContent = t || ''; };
+
+    function refreshStart() {
+      if (!Net.isHost()) { startBtn.style.display = 'none'; return; }
+      startBtn.style.display = 'inline-block';
+      startBtn.disabled = !(myColor && Net.peerColor && myColor !== Net.peerColor);
+    }
+    function refreshColors() {
+      // A color the other player has claimed is locked out.
+      if (myColor && Net.peerColor === myColor) { myColor = null; Net.color = null; }
+      for (const b of colorBtns) {
+        const t = b.dataset.tint;
+        const taken = Net.peerColor === t;
+        b.disabled = taken;
+        b.classList.toggle('taken', taken);
+        b.classList.toggle('chosen', myColor === t);
+      }
+      refreshStart();
+    }
+
+    for (const b of colorBtns) {
+      const cv = b.querySelector('canvas');
+      if (cv) drawTeamAnt(cv, b.dataset.tint);
+      b.addEventListener('click', () => {
+        if (b.disabled) return;
+        myColor = b.dataset.tint;
+        Net.setColor(myColor);
+        if (typeof Sfx !== 'undefined') Sfx.play('click');
+        refreshColors();
+      });
+    }
+
+    function connect() {
+      showErr('');
+      const url = (urlIn.value || '').trim();
+      const room = (roomIn.value || '').trim();
+      if (!url || !room) { showErr('Enter a server URL and a room code.'); return; }
+      setStatus('Connecting…');
+      connPane.style.display = 'none';
+      lobbyPane.style.display = 'block';
+      Net.connect(url, room, null);
+    }
+    hostBtn.addEventListener('click', connect);
+    joinBtn.addEventListener('click', connect);
+
+    Net.on('role', (m) => {
+      setStatus(m.role === 'host'
+        ? 'You are the HOST of room "' + m.room + '". Waiting for a friend…'
+        : 'Connected. Pick your color, then wait for the host to start.');
+      refreshStart();
+    });
+    Net.on('peer-join', () => {
+      setStatus(Net.isHost()
+        ? 'A friend joined! Choose colors, then press Start.'
+        : 'Connected to the host. Pick your color.');
+      refreshColors();
+    });
+    Net.on('peer-color', refreshColors);
+    Net.on('error', showErr);
+    Net.on('close', () => { if (state !== 'playing') setStatus('Disconnected.'); });
+    Net.on('peer-left', () => {
+      if (state === 'playing') onPeerLeft();
+      else { setStatus('Your friend left. Waiting…'); refreshColors(); }
+    });
+    Net.on('message', onNetMessage);
+
+    startBtn.addEventListener('click', () => {
+      if (startBtn.disabled) return;
+      if (typeof Music !== 'undefined') Music.start();
+      mpScreen.style.display = 'none';
+      startMPGame();
+    });
+
+    // Open (or reopen) the lobby's connect pane, ready for a fresh session.
+    openMultiplayerLobby = function () {
+      if (typeof Music !== 'undefined') Music.start();
+      leaveMultiplayer();
+      Net.disconnect();
+      showErr('');
+      myColor = null;
+      state = 'title';
+      world = null;
+      document.body.classList.remove('playing');
+      msgScreen.style.display = 'none';
+      titleScreen.style.display = 'none';
+      connPane.style.display = 'block';
+      lobbyPane.style.display = 'none';
+      startBtn.style.display = 'none';
+      refreshColors();
+      mpScreen.style.display = 'flex';
+    };
+
+    mpBtn.addEventListener('click', () => openMultiplayerLobby());
+
+    backBtn.addEventListener('click', () => {
+      Net.disconnect();
+      mpScreen.style.display = 'none';
+      showTitle();
+    });
+  }
+  setupMultiplayerUI();
 
   // Start on the title screen.
   showTitle();

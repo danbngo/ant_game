@@ -1,0 +1,12 @@
+{
+  "name": "ant-farm",
+  "version": "1.0.0",
+  "description": "Ant Farm RTS with real-time multiplayer relay server.",
+  "private": true,
+  "scripts": {
+    "server": "node server/server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

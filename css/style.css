@@ -186,6 +186,64 @@ body.playing #index-btn { display: block; }
   border-radius: 10px;
 }
 
+/* Multiplayer lobby. */
+#mp-conn, #mp-lobby {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0;
+}
+.mp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #f0e6d2;
+  font-size: 15px;
+  text-align: left;
+}
+.mp-field input {
+  padding: 8px 10px;
+  min-width: 260px;
+  background: rgba(20, 14, 8, 0.9);
+  border: 2px solid #6b4a30;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 16px;
+}
+.mp-btnrow {
+  display: flex;
+  gap: 14px;
+}
+#mp-colors {
+  display: flex;
+  gap: 20px;
+  margin-top: 6px;
+}
+.mp-color.chosen {
+  border-color: #f0c537;
+  box-shadow: 0 0 0 3px rgba(240, 197, 55, 0.5);
+}
+.mp-color.taken {
+  opacity: 0.4;
+  cursor: not-allowed;
+  filter: grayscale(0.8);
+}
+.mp-color.taken:hover {
+  transform: none;
+  border-color: #6b4a30;
+  background: rgba(40, 28, 18, 0.85);
+}
+.mp-error {
+  color: #ff9b7a;
+  min-height: 1.2em;
+  font-size: 14px;
+}
+#mp-status {
+  color: #f0c537;
+  font-size: 16px;
+}
+
 /* Index / bestiary overlay. */
 #index-screen {
   position: fixed;

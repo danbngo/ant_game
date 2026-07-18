@@ -54,7 +54,8 @@
     <div id="title-screen" class="overlay">
       <h1><span class="ant-word">ANT<span class="title-ant">🐜</span></span>&nbsp;<span class="ant-word">FARM<span class="title-bee">🐝</span></span></h1>
       <p class="tagline">Grow your colony. Crush the rivals.</p>
-      <button id="play-btn" type="button">Play</button>
+      <button id="play-btn" type="button">Single Player</button>
+      <button id="mp-btn" type="button">Multiplayer</button>
       <button id="continue-btn" type="button" style="display:none">Continue Saved Game</button>
       <p class="hint">Destroy every enemy queen to win each level. Protect your own.</p>
     </div>
@@ -74,6 +75,43 @@
           <canvas width="90" height="90"></canvas><span>Black</span>
         </button>
       </div>
+    </div>
+
+    <!-- Multiplayer lobby: connect to a relay, pick a unique color, then play. -->
+    <div id="mp-screen" class="overlay" style="display:none">
+      <h1>Multiplayer</h1>
+      <p class="tagline">Battle a friend in real time.</p>
+      <div id="mp-conn">
+        <label class="mp-field">Server
+          <input id="mp-url" type="text" value="ws://localhost:8080" spellcheck="false" />
+        </label>
+        <label class="mp-field">Room code
+          <input id="mp-room" type="text" value="ANTS" maxlength="12" spellcheck="false" />
+        </label>
+        <div class="mp-btnrow">
+          <button id="mp-host-btn" type="button">Host Game</button>
+          <button id="mp-join-btn" type="button">Join Game</button>
+        </div>
+        <p class="hint">Host one side and share the room code; your friend joins the same code.</p>
+      </div>
+      <div id="mp-lobby" style="display:none">
+        <p id="mp-status">Connecting…</p>
+        <p class="tagline">Pick your color — a color the other player took is locked.</p>
+        <div id="mp-colors">
+          <button class="team-btn mp-color" type="button" data-tint="darkRed">
+            <canvas width="90" height="90"></canvas><span>Red</span>
+          </button>
+          <button class="team-btn mp-color" type="button" data-tint="blue">
+            <canvas width="90" height="90"></canvas><span>Blue</span>
+          </button>
+          <button class="team-btn mp-color" type="button" data-tint="black">
+            <canvas width="90" height="90"></canvas><span>Black</span>
+          </button>
+        </div>
+        <button id="mp-start-btn" type="button" style="display:none" disabled>Start Game</button>
+      </div>
+      <p id="mp-error" class="mp-error"></p>
+      <button id="mp-back-btn" type="button">Back</button>
     </div>
 
     <!-- Index / bestiary of all ants, bees, and bugs. -->
@@ -131,6 +169,7 @@
   </div>
 
   <!-- Loose JS, loaded in dependency order. No bundler. -->
+  <script src="js/net.js"></script>
   <script src="js/config.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/music.js"></script>

@@ -10,6 +10,48 @@
 //   - WASD / arrows: drive the selected ants directly.
 //
 // `selection` is a Set of Ant objects, shared with the game loop.
+//
+// In multiplayer the LOCAL player drives `world.controlled` (their own colony),
+// which may not be the isPlayer colony. Guests don't apply orders directly —
+// they send them to the host, who is authoritative.
+
+// Apply a context order (attack / loot / dig / move) to an explicit list of ants
+// on behalf of the colony `faction`. Shared by local input (host / single-player)
+// and by the host when it replays a guest's order.
+function applyOrderToAnts(world, ants, area, tileX, tileY, faction) {
+  const tx = Math.floor(tileX);
+  const ty = Math.floor(tileY);
+
+  if (area === 'outside') {
+    const grid = world.surface;
+    for (const ant of ants) {
+      const p = findPath(grid, Math.round(ant.x), Math.round(ant.y), tx, ty, ant.size);
+      if (p) { ant.setPath(p); ant.order = { type: 'move' }; }
+    }
+    return;
+  }
+
+  const grid = world.grid;
+  const enemyAnt = world.enemyAntAtFor(faction, tileX, tileY);
+  const enemyEgg = enemyAnt ? null : world.enemyEggAtFor(faction, tx, ty);
+  const isDirt = !grid.isTunnel(tx, ty) && grid.inBounds(tx, ty);
+
+  for (const ant of ants) {
+    if (enemyAnt) {
+      ant.stop();
+      ant.order = { type: 'attack', target: enemyAnt };
+    } else if (enemyEgg && !ant.isWarrior) {
+      ant.stop();
+      ant.order = { type: 'loot', egg: enemyEgg };
+    } else if (isDirt && !ant.isWarrior) {
+      ant.stop();
+      ant.order = { type: 'dig', tx, ty };
+    } else {
+      const p = findPath(grid, Math.round(ant.x), Math.round(ant.y), tx, ty, ant.size);
+      if (p) { ant.setPath(p); ant.order = { type: 'move' }; }
+    }
+  }
+}
 
 class InputController {
   constructor(canvas, camera, world, selection) {
@@ -63,10 +105,17 @@ class InputController {
     return { x: w.x / CONFIG.TILE, y: w.y / CONFIG.TILE };
   }
 
-  // Topmost player ant (in the current area) covering the tile point.
+  // The colony this client controls (its own colony in multiplayer, else the
+  // player colony).
+  _controlled() {
+    return this.world.controlled || this.world.player;
+  }
+
+  // Topmost controlled-colony ant (in the current area) covering the tile point.
   _playerAntAt(tileX, tileY) {
-    if (!this.world.player) return null;
-    const ants = this.world.player.allAnts().reverse();
+    const col = this._controlled();
+    if (!col) return null;
+    const ants = col.allAnts().reverse();
     for (const ant of ants) {
       if (ant.area !== this.area) continue;
       if (
@@ -86,14 +135,15 @@ class InputController {
   }
 
   _selectInBox(box) {
-    if (!this.world.player) return;
+    const col = this._controlled();
+    if (!col) return;
     const a = this._screenToTile(box.x0, box.y0);
     const b = this._screenToTile(box.x1, box.y1);
     const minX = Math.min(a.x, b.x);
     const maxX = Math.max(a.x, b.x);
     const minY = Math.min(a.y, b.y);
     const maxY = Math.max(a.y, b.y);
-    for (const ant of this.world.player.allAnts()) {
+    for (const ant of col.allAnts()) {
       if (ant.area !== this.area) continue;
       if (ant.cx >= minX && ant.cx <= maxX && ant.cy >= minY && ant.cy <= maxY) {
         this.selection.add(ant);
@@ -105,43 +155,20 @@ class InputController {
 
   _command(tileX, tileY) {
     if (this.selection.size === 0) return;
+    const col = this._controlled();
+    if (!col) return;
     if (typeof Sfx !== 'undefined') Sfx.play('command');
-    const tx = Math.floor(tileX);
-    const ty = Math.floor(tileY);
 
-    // On the surface, the only order is "move there".
-    if (this.area === 'outside') {
-      for (const ant of this.selection) {
-        const p = findPath(this.grid, Math.round(ant.x), Math.round(ant.y), tx, ty, ant.size);
-        if (p) { ant.setPath(p); ant.order = { type: 'move' }; }
-      }
+    // Guests are not authoritative: send the order to the host, who applies it.
+    if (typeof Net !== 'undefined' && Net.active && Net.isGuest()) {
+      Net.send({
+        t: 'cmd', kind: 'order', area: this.area,
+        x: tileX, y: tileY, ids: [...this.selection].map((a) => a.id),
+      });
       return;
     }
 
-    const enemyAnt = this.world.enemyAntAt(tileX, tileY);
-    const enemyEgg = enemyAnt ? null : this.world.enemyEggAt(tx, ty);
-    const isDirt = !this.grid.isTunnel(tx, ty) && this.grid.inBounds(tx, ty);
-
-    for (const ant of this.selection) {
-      if (enemyAnt) {
-        ant.stop();
-        ant.order = { type: 'attack', target: enemyAnt };
-      } else if (enemyEgg && !ant.isWarrior) {
-        // Workers loot; warriors don't work — they just escort (move).
-        ant.stop();
-        ant.order = { type: 'loot', egg: enemyEgg };
-      } else if (isDirt && !ant.isWarrior) {
-        ant.stop();
-        ant.order = { type: 'dig', tx, ty };
-      } else {
-        // Plain move (also the fallback for warriors told to loot/dig).
-        const p = findPath(this.grid, Math.round(ant.x), Math.round(ant.y), tx, ty, ant.size);
-        if (p) {
-          ant.setPath(p);
-          ant.order = { type: 'move' };
-        }
-      }
-    }
+    applyOrderToAnts(this.world, [...this.selection], this.area, tileX, tileY, col.id);
   }
 
   // WASD: drive the selected ants (each component -1, 0, or 1).
